@@ -1,0 +1,3 @@
+[submodule "drivex"]
+	path = drivex
+	url = ssh://r-webdev02.lab.mtl.com:29418/drivex
