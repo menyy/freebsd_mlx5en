@@ -1,0 +1,535 @@
+/*-
+ * Copyright (c) 2015, Mellanox Technologies. All rights reserved.
+ *
+ * This software is available to you under a choice of one of two
+ * licenses.  You may choose to be licensed under the terms of the GNU
+ * General Public License (GPL) Version 2, available from the file
+ * COPYING in the main directory of this source tree, or the
+ * OpenIB.org BSD license below:
+ *
+ *     Redistribution and use in source and binary forms, with or
+ *     without modification, are permitted provided that the following
+ *     conditions are met:
+ *
+ *      - Redistributions of source code must retain the above
+ *        copyright notice, this list of conditions and the following
+ *        disclaimer.
+ *
+ *      - Redistributions in binary form must reproduce the above
+ *        copyright notice, this list of conditions and the following
+ *        disclaimer in the documentation and/or other materials
+ *        provided with the distribution.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+#ifndef _MLX5_EN_H_
+#define	_MLX5_EN_H_
+
+#include <linux/page.h>
+#include <linux/slab.h>
+#include <linux/if_vlan.h>
+#include <linux/if_ether.h>
+#include <linux/vmalloc.h>
+#include <linux/moduleparam.h>
+#include <linux/delay.h>
+#include <linux/netdevice.h>
+#include <linux/etherdevice.h>
+
+#include <netinet/in_systm.h>
+#include <netinet/in.h>
+#include <netinet/if_ether.h>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
+#include <netinet/tcp.h>
+#include <netinet/tcp_lro.h>
+#include <netinet/udp.h>
+
+#include <linux/mlx5/driver.h>
+#include <linux/mlx5/qp.h>
+#include <linux/mlx5/cq.h>
+
+#include "vport.h"
+#include "wq.h"
+#include "transobj.h"
+#include "mlx5_core.h"
+
+#define	netdev_err(dev, ...) \
+	if_printf(dev, __VA_ARGS__)
+
+#define	MLX5E_MAX_MBUF_FRAGS	16	/* XXX tune this */
+
+#define	MLX5E_MAX_NUM_TC	8
+
+#define	MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE                0x7
+#define	MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE                0xa
+#define	MLX5E_PARAMS_MAXIMUM_LOG_SQ_SIZE                0xd
+
+#define	MLX5E_PARAMS_MINIMUM_LOG_RQ_SIZE                0x7
+#define	MLX5E_PARAMS_DEFAULT_LOG_RQ_SIZE                0xa
+#define	MLX5E_PARAMS_MAXIMUM_LOG_RQ_SIZE                0xd
+
+#define	MLX5E_PARAMS_DEFAULT_RX_CQ_MODERATION_USEC      0x10
+#define	MLX5E_PARAMS_DEFAULT_RX_CQ_MODERATION_PKTS      0x20
+#define	MLX5E_PARAMS_DEFAULT_TX_CQ_MODERATION_USEC      0x10
+#define	MLX5E_PARAMS_DEFAULT_TX_CQ_MODERATION_PKTS      0x20
+#define	MLX5E_PARAMS_DEFAULT_MIN_RX_WQES                0x80
+#define	MLX5E_PARAMS_DEFAULT_RX_HASH_LOG_TBL_SZ         0x7
+#define	MLX5E_CACHELINE_SIZE CACHE_LINE_SIZE
+#define	MLX5E_MTU_OVERHEAD \
+    (ETHER_HDR_LEN + ETHER_VLAN_ENCAP_LEN + MLX5E_NET_IP_ALIGN)
+#define	MLX5E_MTU_MAX					0xffff
+
+struct mlx5_core_dev;
+struct mlx5e_cq;
+
+typedef void (mlx5e_cq_func_t)(struct mlx5e_cq *);
+
+#define	MLX5E_STATS_COUNT(a,b,c,d) a
+#define	MLX5E_STATS_VAR(a,b,c,d) b;
+#define	MLX5E_STATS_DESC(a,b,c,d) c, d,
+
+#define	MLX5E_VPORT_STATS(m)						\
+  /* HW counters */							\
+  m(+1, u64 rx_packets, "rx_packets", "Received packets")		\
+  m(+1, u64 rx_bytes, "rx_bytes", "Received bytes")			\
+  m(+1, u64 tx_packets, "tx_packets", "Transmitted packets")		\
+  m(+1, u64 tx_bytes, "tx_bytes", "Transmitted bytes")			\
+  m(+1, u64 rx_error_packets, "rx_error_packets", "Received error packets") \
+  m(+1, u64 rx_error_bytes, "rx_error_bytes", "Received error bytes")	\
+  m(+1, u64 tx_error_packets, "tx_error_packets", "Transmitted error packets") \
+  m(+1, u64 tx_error_bytes, "tx_error_bytes", "Transmitted error bytes") \
+  m(+1, u64 rx_unicast_packets, "rx_unicast_packets", "Received unicast packets") \
+  m(+1, u64 rx_unicast_bytes, "rx_unicast_bytes", "Received unicast bytes") \
+  m(+1, u64 tx_unicast_packets, "tx_unicast_packets", "Transmitted unicast packets") \
+  m(+1, u64 tx_unicast_bytes, "tx_unicast_bytes", "Transmitted unicast bytes") \
+  m(+1, u64 rx_multicast_packets, "rx_multicast_packets", "Received multicast packets") \
+  m(+1, u64 rx_multicast_bytes, "rx_multicast_bytes", "Received multicast bytes") \
+  m(+1, u64 tx_multicast_packets, "tx_multicast_packets", "Transmitted multicast packets") \
+  m(+1, u64 tx_multicast_bytes, "tx_multicast_bytes", "Transmitted multicast bytes") \
+  m(+1, u64 rx_broadcast_packets, "rx_broadcast_packets", "Received broadcast packets") \
+  m(+1, u64 rx_broadcast_bytes, "rx_broadcast_bytes", "Received broadcast bytes") \
+  m(+1, u64 tx_broadcast_packets, "tx_broadcast_packets", "Transmitted broadcast packets") \
+  m(+1, u64 tx_broadcast_bytes, "tx_broadcast_bytes", "Transmitted broadcast bytes") \
+  /* SW counters */							\
+  m(+1, u64 tso_packets, "tso_packets", "Transmitted TSO packets")	\
+  m(+1, u64 tso_bytes, "tso_bytes", "Transmitted TSO bytes")		\
+  m(+1, u64 lro_packets, "lro_packets", "Received LRO packets")		\
+  m(+1, u64 lro_bytes, "lro_bytes", "Received LRO bytes")		\
+  m(+1, u64 rx_csum_good, "rx_csum_good", "Received checksum valid packets") \
+  m(+1, u64 rx_csum_none, "rx_csum_none", "Received no checksum packets") \
+  m(+1, u64 tx_csum_offload, "tx_csum_offload", "Transmit checksum offload packets") \
+  m(+1, u64 tx_queue_stopped, "tx_queue_stopped", "Transmit queue stopped") \
+  m(+1, u64 tx_queue_wake, "tx_queue_wake", "Transmit queue wake")	\
+  m(+1, u64 tx_queue_dropped, "tx_queue_dropped", "Transmit queue dropped") \
+  m(+1, u64 rx_wqe_err, "rx_wqe_err", "Receive WQE errors")
+
+#define	MLX5E_VPORT_STATS_NUM (0 MLX5E_VPORT_STATS(MLX5E_STATS_COUNT))
+
+struct mlx5e_vport_stats {
+	struct sysctl_ctx_list ctx;
+	u64	arg [0];
+	MLX5E_VPORT_STATS(MLX5E_STATS_VAR)
+};
+
+#define	MLX5E_RQ_STATS(m)					\
+  m(+1, u64 packets, "packets", "Received packets")		\
+  m(+1, u64 csum_none, "csum_none", "Received packets")		\
+  m(+1, u64 lro_packets, "lro_packets", "Received packets")	\
+  m(+1, u64 lro_bytes, "lro_bytes", "Received packets")		\
+  m(+1, u64 wqe_err, "wqe_err", "Received packets")
+
+#define	MLX5E_RQ_STATS_NUM (0 MLX5E_RQ_STATS(MLX5E_STATS_COUNT))
+
+struct mlx5e_rq_stats {
+	struct sysctl_ctx_list ctx;
+	u64	arg [0];
+	MLX5E_RQ_STATS(MLX5E_STATS_VAR)
+};
+
+#define	MLX5E_RX_MBUF_DMA_ADDR(_mb) \
+	(_mb)->m_pkthdr.PH_loc.sixtyfour[0]
+
+#define	MLX5E_SQ_STATS(m)						\
+  m(+1, u64 packets, "packets", "Received packets")			\
+  m(+1, u64 tso_packets, "tso_packets", "Received packets")		\
+  m(+1, u64 tso_bytes, "tso_bytes", "Received packets")			\
+  m(+1, u64 csum_offload_none, "csum_offload_none", "Received packets")	\
+  m(+1, u64 stopped, "stopped", "Received packets")			\
+  m(+1, u64 wake, "wake", "Received packets")				\
+  m(+1, u64 dropped, "dropped", "Received packets")			\
+  m(+1, u64 nop, "nop", "Received packets")
+
+#define	MLX5E_SQ_STATS_NUM (0 MLX5E_SQ_STATS(MLX5E_STATS_COUNT))
+
+struct mlx5e_sq_stats {
+	struct sysctl_ctx_list ctx;
+	u64	arg [0];
+	MLX5E_SQ_STATS(MLX5E_STATS_VAR)
+};
+
+struct mlx5e_stats {
+	struct mlx5e_vport_stats vport;
+};
+
+struct mlx5e_params {
+	u8	log_sq_size;
+	u8	log_rq_size;
+	u16	num_channels;
+	u8	default_vlan_prio;
+	u8	num_tc;
+	u16	rx_cq_moderation_usec;
+	u16	rx_cq_moderation_pkts;
+	u16	tx_cq_moderation_usec;
+	u16	tx_cq_moderation_pkts;
+	u16	min_rx_wqes;
+	u16	rx_hash_log_tbl_sz;
+};
+
+#define	MLX5E_PARAMS(m)							\
+  m(+1, u64 tx_queue_size_max, "tx_queue_size_max", "Max send queue size") \
+  m(+1, u64 rx_queue_size_max, "rx_queue_size_max", "Max receive queue size") \
+  m(+1, u64 tx_queue_size, "tx_queue_size", "Default send queue size")	\
+  m(+1, u64 rx_queue_size, "rx_queue_size", "Default receive queue size") \
+  m(+1, u64 channels, "channels", "Default number of channels")		\
+  m(+1, u64 rx_coalesce_usecs, "rx_coalesce_usecs", "Limit in usec for joining rx packets") \
+  m(+1, u64 rx_coalesce_pkts, "rx_coalesce_pkts", "Maximum number of rx packets to join") \
+  m(+1, u64 tx_coalesce_usecs, "tx_coalesce_usecs", "Limit in usec for joining tx packets") \
+  m(+1, u64 tx_coalesce_pkts, "tx_coalesce_pkts", "Maximum number of tx packets to join")
+
+#define	MLX5E_PARAMS_NUM (0 MLX5E_PARAMS(MLX5E_STATS_COUNT))
+
+struct mlx5e_params_ethtool {
+	u64	arg [0];
+	MLX5E_PARAMS(MLX5E_STATS_VAR)
+};
+
+struct mlx5e_cq {
+	/* data path - accessed per cqe */
+	struct mlx5_cqwq wq;
+	mlx5e_cq_func_t *func;
+
+	/* data path - accessed per HW polling */
+	struct mlx5_core_cq mcq;
+	struct mlx5e_channel *channel;
+
+	/* control */
+	struct mlx5_wq_ctrl wq_ctrl;
+} __aligned(MLX5E_CACHELINE_SIZE);
+
+struct mlx5e_rq {
+	/* data path */
+	struct mlx5_wq_ll wq;
+	u32	wqe_sz;
+	struct mbuf **mbuf;
+
+	struct device *pdev;
+	struct net_device *netdev;
+	struct mlx5e_rq_stats stats;
+	struct mlx5e_cq cq;
+	struct lro_ctrl lro;
+
+	volatile int enabled;
+	int	ix;
+
+	/* control */
+	struct mlx5_wq_ctrl wq_ctrl;
+	u32	rqn;
+	struct mlx5e_channel *channel;
+} __aligned(MLX5E_CACHELINE_SIZE);
+
+struct mlx5e_tx_mbuf_cb {
+	u32	num_bytes;
+	u8	num_wqebbs;
+	u8	num_dma;
+};
+
+#define	MLX5E_TX_MBUF_CB(_mb) \
+    ((struct mlx5e_tx_mbuf_cb *)(_mb)->m_pkthdr.PH_loc.sixtyfour)
+
+struct mlx5e_sq_dma {
+	dma_addr_t addr;
+	u32	size;
+};
+
+enum {
+	MLX5E_SQ_STATE_WAKE_TXQ_ENABLE,
+};
+
+struct mlx5e_sq {
+	/* data path */
+	spinlock_t lock;
+
+	/* dirtied @completion */
+	u16	cc;
+	u32	dma_fifo_cc;
+
+	/* dirtied @xmit */
+	u16 pc __aligned(MLX5E_CACHELINE_SIZE);
+	u32	dma_fifo_pc;
+	u32	bf_offset;
+	struct mlx5e_sq_stats stats;
+
+	struct mlx5e_cq cq;
+
+	/* pointers to per packet info: write@xmit, read@completion */
+	struct mbuf **mbuf;
+	struct mlx5e_sq_dma *dma_fifo;
+
+	/* read only */
+	struct mlx5_wq_cyc wq;
+	u32	dma_fifo_mask;
+	void __iomem *uar_map;
+	u32	sqn;
+	u32	bf_buf_size;
+	struct device *pdev;
+	u32	mkey_be;
+	unsigned long state;
+
+	/* control path */
+	struct mlx5_wq_ctrl wq_ctrl;
+	struct mlx5_uar uar;
+	struct mlx5e_channel *channel;
+	int	tc;
+} __aligned(MLX5E_CACHELINE_SIZE);
+
+static inline bool
+mlx5e_sq_has_room_for(struct mlx5e_sq *sq, u16 n)
+{
+	return ((sq->wq.sz_m1 & (sq->cc - sq->pc)) >= n ||
+	    sq->cc == sq->pc);
+}
+
+struct mlx5e_channel {
+	/* data path */
+	struct mlx5e_rq rq;
+	struct mlx5e_sq sq[MLX5E_MAX_NUM_TC];
+	struct device *pdev;
+	struct net_device *netdev;
+	u32	mkey_be;
+	u8	num_tc;
+
+	/* control */
+	struct mlx5e_priv *priv;
+	int	ix;
+	int	cpu;
+};
+
+enum mlx5e_traffic_types {
+	MLX5E_TT_IPV4_TCP = 0,
+	MLX5E_TT_IPV6_TCP = 1,
+	MLX5E_TT_IPV4_UDP = 2,
+	MLX5E_TT_IPV6_UDP = 3,
+	MLX5E_TT_IPV4 = 4,
+	MLX5E_TT_IPV6 = 5,
+	MLX5E_TT_ANY = 6,
+	MLX5E_NUM_TT = 7,
+};
+
+enum {
+	MLX5E_RQT_SPREADING = 0,
+	MLX5E_RQT_DEFAULT_RQ = 1,
+	MLX5E_NUM_RQT = 2,
+};
+
+struct mlx5e_eth_addr_info {
+	u8	addr [ETH_ALEN + 2];
+	u32	tt_vec;
+	u32	ft_ix[MLX5E_NUM_TT];	/* flow table index per traffic type */
+};
+
+#define	MLX5E_ETH_ADDR_HASH_SIZE (1 << BITS_PER_BYTE)
+
+struct mlx5e_eth_addr_hash_node;
+
+struct mlx5e_eth_addr_hash_head {
+	struct mlx5e_eth_addr_hash_node *lh_first;
+};
+
+struct mlx5e_eth_addr_db {
+	struct mlx5e_eth_addr_hash_head netdev_uc[MLX5E_ETH_ADDR_HASH_SIZE];
+	struct mlx5e_eth_addr_hash_head netdev_mc[MLX5E_ETH_ADDR_HASH_SIZE];
+	struct mlx5e_eth_addr_info broadcast;
+	struct mlx5e_eth_addr_info allmulti;
+	struct mlx5e_eth_addr_info promisc;
+	bool	broadcast_enabled;
+	bool	allmulti_enabled;
+	bool	promisc_enabled;
+};
+
+enum {
+	MLX5E_STATE_ASYNC_EVENTS_ENABLE,
+	MLX5E_STATE_OPENED,
+};
+
+struct mlx5e_vlan_db {
+	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
+	u32	active_vlans_ft_ix[VLAN_N_VID];
+	u32	untagged_rule_ft_ix;
+	u32	any_vlan_rule_ft_ix;
+	bool	filter_disabled;
+};
+
+struct mlx5e_flow_table {
+	void   *vlan;
+	void   *main;
+};
+
+struct mlx5e_priv {
+	/* priv data path fields - start */
+	int	order_base_2_num_channels;
+	int	queue_mapping_channel_mask;
+	int	num_tc;
+	int	default_vlan_prio;
+	/* priv data path fields - end */
+
+	unsigned long state;
+	struct mutex state_lock;	/* Protects Interface state */
+	struct mlx5_uar cq_uar;
+	u32	pdn;
+	struct mlx5_core_mr mr;
+
+	struct mlx5e_channel * volatile *channel;
+	u32	tisn[MLX5E_MAX_NUM_TC];
+	u32	rqtn;
+	u32	tirn[MLX5E_NUM_TT];
+
+	struct mlx5e_flow_table ft;
+	struct mlx5e_eth_addr_db eth_addr;
+	struct mlx5e_vlan_db vlan;
+
+	struct mlx5e_params params;
+	struct mlx5e_params_ethtool params_ethtool;
+	spinlock_t async_events_spinlock;	/* sync hw events */
+	struct work_struct update_carrier_work;
+	struct work_struct set_rx_mode_work;
+
+	struct mlx5_core_dev *mdev;
+	struct net_device *netdev;
+	struct sysctl_ctx_list sysctl_ctx;
+	struct sysctl_oid *sysctl;
+	struct mlx5e_stats stats;
+
+	eventhandler_tag vlan_detach;
+	eventhandler_tag vlan_attach;
+	struct ifmedia media;
+	int	media_status_last;
+	int	media_active_last;
+	int	media_active_user;
+
+	struct timer_list watchdog;
+};
+
+#define	MLX5E_NET_IP_ALIGN 2
+
+struct mlx5e_tx_wqe {
+	struct mlx5_wqe_ctrl_seg ctrl;
+	struct mlx5_wqe_eth_seg eth;
+};
+
+struct mlx5e_rx_wqe {
+	struct mlx5_wqe_srq_next_seg next;
+	struct mlx5_wqe_data_seg data;
+};
+
+enum mlx5e_link_mode {
+	MLX5E_1000BASE_CX_SGMII = 0,
+	MLX5E_1000BASE_KX = 1,
+	MLX5E_10GBASE_CX4 = 2,
+	MLX5E_10GBASE_KX4 = 3,
+	MLX5E_10GBASE_KR = 4,
+	MLX5E_20GBASE_KR2 = 5,
+	MLX5E_40GBASE_CR4 = 6,
+	MLX5E_40GBASE_KR4 = 7,
+	MLX5E_56GBASE_R4 = 8,
+	MLX5E_10GBASE_CR = 12,
+	MLX5E_10GBASE_SR = 13,
+	MLX5E_10GBASE_ER = 14,
+	MLX5E_40GBASE_SR4 = 15,
+	MLX5E_40GBASE_LR4 = 16,
+	MLX5E_100GBASE_CR4 = 20,
+	MLX5E_100GBASE_SR4 = 21,
+	MLX5E_100GBASE_KR4 = 22,
+	MLX5E_100GBASE_LR4 = 23,
+	MLX5E_100BASE_TX = 24,
+	MLX5E_100BASE_T = 25,
+	MLX5E_10GBASE_T = 26,
+	MLX5E_25GBASE_CR = 27,
+	MLX5E_25GBASE_KR = 28,
+	MLX5E_25GBASE_SR = 29,
+	MLX5E_50GBASE_CR2 = 30,
+	MLX5E_50GBASE_KR2 = 31,
+	MLX5E_LINK_MODES_NUMBER,
+};
+
+#define	MLX5E_PROT_MASK(link_mode) (1 << (link_mode))
+#define	MLX5E_FLD_MAX(typ, fld) ((1ULL << __mlx5_bit_sz(typ, fld)) - 1ULL)
+
+int	mlx5e_xmit(struct net_device *dev, struct mbuf *mb);
+
+int	mlx5e_open_locked(struct net_device *);
+int	mlx5e_close_locked(struct net_device *);
+
+void	mlx5e_completion_event(struct mlx5_core_cq *mcq);
+void	mlx5e_cq_error_event(struct mlx5_core_cq *mcq, enum mlx5_event event);
+void	mlx5e_rx_cq_function(struct mlx5e_cq *);
+void	mlx5e_tx_cq_function(struct mlx5e_cq *);
+struct mlx5_cqe64 *mlx5e_get_cqe(struct mlx5e_cq *cq);
+
+int	mlx5e_open_flow_table(struct mlx5e_priv *priv);
+void	mlx5e_close_flow_table(struct mlx5e_priv *priv);
+void	mlx5e_set_rx_mode_core(struct mlx5e_priv *priv);
+void	mlx5e_set_rx_mode_work(struct work_struct *work);
+
+void	mlx5e_vlan_rx_add_vid(void *arg, struct net_device *dev, u16 vid);
+void	mlx5e_vlan_rx_kill_vid(void *arg, struct net_device *dev, u16 vid);
+void	mlx5e_enable_vlan_filter(struct mlx5e_priv *priv);
+void	mlx5e_disable_vlan_filter(struct mlx5e_priv *priv);
+int	mlx5e_add_all_vlan_rules(struct mlx5e_priv *priv);
+void	mlx5e_del_all_vlan_rules(struct mlx5e_priv *priv);
+
+static inline void
+mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
+    struct mlx5e_tx_wqe *wqe)
+{
+	/* ensure wqe is visible to device before updating doorbell record */
+	wmb();
+
+	*sq->wq.db = cpu_to_be32(sq->pc);
+
+	/*
+	 * ensure doorbell record is visible to device before ringing the
+	 * doorbell
+	 */
+	wmb();
+
+	mlx5_write64((__be32 *) & wqe->ctrl,
+	    sq->uar_map + MLX5_BF_OFFSET + sq->bf_offset,
+	    NULL);
+
+	sq->bf_offset ^= sq->bf_buf_size;
+}
+
+static inline void
+mlx5e_cq_arm(struct mlx5e_cq *cq)
+{
+	struct mlx5_core_cq *mcq;
+
+	mcq = &cq->mcq;
+	mlx5_cq_arm(mcq, MLX5_CQ_DB_REQ_NOT, mcq->uar->map, NULL, cq->wq.cc);
+}
+
+extern const struct ethtool_ops mlx5e_ethtool_ops;
+void	mlx5e_create_ethtool(struct mlx5e_priv *);
+void	mlx5e_create_stats(struct sysctl_ctx_list *,
+    struct sysctl_oid_list *, const char *,
+    const char **, unsigned, u64 *);
+
+#endif					/* _MLX5_EN_H_ */
