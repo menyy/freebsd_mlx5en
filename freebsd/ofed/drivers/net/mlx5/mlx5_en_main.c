@@ -1160,6 +1160,9 @@ mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 	if (err)
 		goto err_free;
 
+	/* receive completion queue lock */
+	spin_lock_init(&c->rq.lock);
+
 	/* open completion queue */
 	err = mlx5e_open_cq(c, &cparam->rx_cq, &c->rq.cq,
 	    &mlx5e_rx_cq_function,

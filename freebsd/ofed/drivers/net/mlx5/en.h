@@ -227,6 +227,7 @@ struct mlx5e_cq {
 struct mlx5e_rq {
 	/* data path */
 	struct mlx5_wq_ll wq;
+	spinlock_t lock;
 	u32	wqe_sz;
 	struct mbuf **mbuf;
 
