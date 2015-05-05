@@ -12,6 +12,11 @@ mlx5_en_txrx.c \
 device_if.h bus_if.h vnode_if.h pci_if.h \
         opt_inet.h opt_inet6.h
 
+.if defined(HAVE_TURBO_LRO)
+CFLAGS+= -DHAVE_TURBO_LRO
+SRCS+= tcp_tlro.c
+.endif
+
 CFLAGS+= -I${SYSDIR}/ofed/include
 CFLAGS+= -I${MLXDIR}/core
 CFLAGS+= -I${.CURDIR}

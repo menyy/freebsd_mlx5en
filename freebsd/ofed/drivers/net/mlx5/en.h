@@ -52,6 +52,10 @@
 #include <netinet/tcp_lro.h>
 #include <netinet/udp.h>
 
+#ifdef HAVE_TURBO_LRO
+#include "tcp_tlro.h"
+#endif
+
 #include <linux/mlx5/driver.h>
 #include <linux/mlx5/qp.h>
 #include <linux/mlx5/cq.h>
@@ -237,8 +241,11 @@ struct mlx5e_rq {
 	struct net_device *netdev;
 	struct mlx5e_rq_stats stats;
 	struct mlx5e_cq cq;
+#ifdef HAVE_TURBO_LRO
+	struct tlro_ctrl lro;
+#else
 	struct lro_ctrl lro;
-
+#endif
 	volatile int enabled;
 	int	ix;
 

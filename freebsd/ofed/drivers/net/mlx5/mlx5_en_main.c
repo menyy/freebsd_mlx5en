@@ -511,10 +511,15 @@ mlx5e_create_rq(struct mlx5e_channel *c,
 	    buffer, mlx5e_rq_stats_desc, MLX5E_RQ_STATS_NUM,
 	    rq->stats.arg);
 
+#ifdef HAVE_TURBO_LRO
+	if (tcp_tlro_init(&rq->lro, c->netdev, MLX5E_BUDGET_MAX) != 0)
+		rq->lro.mbuf = NULL;
+#else
 	if (tcp_lro_init(&rq->lro))
 		rq->lro.lro_cnt = 0;
 	else
 		rq->lro.ifp = c->netdev;
+#endif
 
 	return (0);
 
@@ -531,7 +536,11 @@ mlx5e_destroy_rq(struct mlx5e_rq *rq)
 	sysctl_ctx_free(&rq->stats.ctx);
 
 	/* free leftover LRO packets, if any */
+#ifdef HAVE_TURBO_LRO
+	tcp_tlro_free(&rq->lro);
+#else
 	tcp_lro_free(&rq->lro);
+#endif
 
 	kfree(rq->mbuf);
 	mlx5_wq_destroy(&rq->wq_ctrl);

@@ -123,7 +123,9 @@ mlx5e_build_rx_mbuf(struct mlx5_cqe64 *cqe,
 static void
 mlx5e_poll_rx_cq(struct mlx5e_rq *rq, int budget)
 {
+#ifndef HAVE_TURBO_LRO
 	struct lro_entry *queued;
+#endif
 	int i;
 
 	for (i = 0; i < budget; i++) {
@@ -155,13 +157,23 @@ mlx5e_poll_rx_cq(struct mlx5e_rq *rq, int budget)
 		}
 		mlx5e_build_rx_mbuf(cqe, rq, mb);
 		rq->stats.packets++;
-
+#ifdef HAVE_TURBO_LRO
+		if (mb->m_pkthdr.csum_flags == 0 ||
+		    (rq->netdev->if_capenable & IFCAP_LRO) == 0 ||
+		    rq->lro.mbuf == NULL) {
+			/* normal input */
+			rq->netdev->if_input(rq->netdev, mb);
+		} else {
+			tcp_tlro_rx(&rq->lro, mb);
+		}
+#else
 		if (mb->m_pkthdr.csum_flags == 0 ||
 		    (rq->netdev->if_capenable & IFCAP_LRO) == 0 ||
 		    rq->lro.lro_cnt == 0 ||
 		    tcp_lro_rx(&rq->lro, mb, 0) != 0) {
 			rq->netdev->if_input(rq->netdev, mb);
 		}
+#endif
 wq_ll_pop:
 		mlx5_wq_ll_pop(&rq->wq, wqe_counter_be,
 		    &wqe->next.next_wqe_index);
@@ -171,11 +183,12 @@ wq_ll_pop:
 
 	/* ensure cq space is freed before enabling more cqes */
 	wmb();
-
+#ifndef HAVE_TURBO_LRO
 	while ((queued = SLIST_FIRST(&rq->lro.lro_active)) != NULL) {
 		SLIST_REMOVE_HEAD(&rq->lro.lro_active, next);
 		tcp_lro_flush(&rq->lro, queued);
 	}
+#endif
 }
 
 void
@@ -186,5 +199,8 @@ mlx5e_rx_cq_function(struct mlx5e_cq *cq)
 	mlx5e_poll_rx_cq(rq, MLX5E_BUDGET_MAX);
 	mlx5e_post_rx_wqes(rq);
 	mlx5e_cq_arm(cq);
+#ifdef HAVE_TURBO_LRO
+	tcp_tlro_flush(&rq->lro, 1);
+#endif
 	spin_unlock(&rq->lock);
 }
