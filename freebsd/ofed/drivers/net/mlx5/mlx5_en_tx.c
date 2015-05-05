@@ -351,24 +351,6 @@ dma_unmap_wqe_err:
 	return (ENXIO);
 }
 
-int
-mlx5e_xmit(struct net_device *dev, struct mbuf *mb)
-{
-	struct mlx5e_sq *sq;
-	int ret;
-
-	sq = mlx5e_select_queue(dev, mb);
-	if (sq == NULL) {
-		/* invalid send queue */
-		m_freem(mb);
-		return (ENXIO);
-	}
-	spin_lock(&sq->lock);
-	ret = mlx5e_sq_xmit(sq, mb);
-	spin_unlock(&sq->lock);
-	return (ret);
-}
-
 static void
 mlx5e_poll_tx_cq(struct mlx5e_sq *sq)
 {
@@ -433,11 +415,25 @@ mlx5e_poll_tx_cq(struct mlx5e_sq *sq)
 
 	sq->dma_fifo_cc = dma_fifo_cc;
 	sq->cc = sqcc;
-#if 0
-	/* XXX do we need this */
-	priv->stats.vport.tx_bytes += nbytes;
-	priv->stats.vport.tx_packets += npkts;
-#endif
+}
+
+int
+mlx5e_xmit(struct net_device *dev, struct mbuf *mb)
+{
+	struct mlx5e_sq *sq;
+	int ret;
+
+	sq = mlx5e_select_queue(dev, mb);
+	if (sq == NULL) {
+		/* invalid send queue */
+		m_freem(mb);
+		return (ENXIO);
+	}
+	spin_lock(&sq->lock);
+	mlx5e_poll_tx_cq(sq);
+	ret = mlx5e_sq_xmit(sq, mb);
+	spin_unlock(&sq->lock);
+	return (ret);
 }
 
 void
