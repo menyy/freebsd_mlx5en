@@ -128,7 +128,7 @@ tcp_tlro_get_header(const struct mbuf *m, const u_int off,
 static void
 tcp_tlro_extract_header(struct tlro_mbuf_data *pinfo, struct mbuf *m, int seq)
 {
-	uint8_t *phdr = pinfo->buf;
+	uint8_t *phdr = (uint8_t *)pinfo->buf;
 	struct ether_header *eh;
 	struct ether_vlan_header *vlan;
 #ifdef INET
@@ -277,10 +277,34 @@ tcp_tlro_extract_header(struct tlro_mbuf_data *pinfo, struct mbuf *m, int seq)
 	/* store more info */
 	pinfo->data_off = off;
 	pinfo->tcp = tcp;
-	pinfo->buf_length = phdr - pinfo->buf;
+repeat:
+	pinfo->buf_length = phdr - (uint8_t *)pinfo->buf;
+	if (pinfo->buf_length & 3) {
+		/* pad to 32-bits */
+		*phdr++ = 0;
+		goto repeat;
+	}
+	pinfo->buf_length /= 4;
 	return;
 error:
 	pinfo->buf_length = 0;
+}
+
+static int32_t
+tcp_tlro_cmp32(const uint32_t *pa, const uint32_t *pb, uint32_t num)
+{
+	int32_t diff;
+
+	while (num--) {
+		/*
+		 * NOTE: Endianness does not matter in this
+		 * comparisation:
+		 */
+		diff = (*pa++) - (*pb++);
+		if (diff != 0)
+			return (diff);
+	}
+	return (0);
 }
 
 static int
@@ -300,7 +324,7 @@ tcp_tlro_compare_header(const void *_ppa, const void *_ppb)
 	if (ret != 0)
 		goto done;
 	if (pinfoa->buf_length != 0) {
-		ret = memcmp(pinfoa->buf, pinfob->buf, pinfoa->buf_length);
+		ret = tcp_tlro_cmp32(pinfoa->buf, pinfob->buf, pinfoa->buf_length);
 		if (ret != 0)
 			goto done;
 		ret = ntohl(pinfoa->tcp->th_seq) - ntohl(pinfob->tcp->th_seq);
@@ -363,7 +387,7 @@ tcp_tlro_combine(struct tlro_ctrl *tlro, int force)
 		for (x = y + 1; x != tlro->curr; x++) {
 			pinfob = tlro->mbuf[x].data;
 			if (pinfoa->buf_length != pinfob->buf_length ||
-			    memcmp(pinfoa->buf, pinfob->buf, pinfoa->buf_length) != 0)
+			    tcp_tlro_cmp32(pinfoa->buf, pinfob->buf, pinfoa->buf_length) != 0)
 				break;
 		}
 		if (pinfoa->buf_length == 0) {
@@ -399,8 +423,8 @@ tcp_tlro_combine(struct tlro_ctrl *tlro, int force)
 			ackb = ntohl(pinfob->tcp->th_ack);
 
 			/* check for command packets */
-			if ((pinfoa->tcp->th_flags & ~TH_ACK) ||
-			    (pinfob->tcp->th_flags & ~TH_ACK))
+			if ((pinfoa->tcp->th_flags & ~(TH_ACK | TH_PUSH)) ||
+			    (pinfob->tcp->th_flags & ~(TH_ACK | TH_PUSH)))
 				break;
 
 			/* check if there is enough space */

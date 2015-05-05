@@ -51,10 +51,10 @@ struct tlro_mbuf_data {
 	int	data_off;
 	int	ip_hdrlen;
 	int	ip_len;
-	int	tcp_len;
+	uint16_t tcp_len;
 	uint8_t	ip_version;
-	uint8_t buf_length;
-	uint8_t	buf[TLRO_MAX_HEADER];
+	uint8_t buf_length;	/* in 32-bit words */
+	uint32_t buf[TLRO_MAX_HEADER / 4];
 } __aligned(sizeof(void *));
 
 struct tlro_mbuf_ptr {
