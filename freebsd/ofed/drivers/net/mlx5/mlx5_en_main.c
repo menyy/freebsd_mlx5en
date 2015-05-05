@@ -643,7 +643,7 @@ mlx5e_wait_for_min_rx_wqes(struct mlx5e_rq *rq)
 		if (wq->cur_sz >= priv->params.min_rx_wqes)
 			return (0);
 
-		msleep(20);
+		msleep(4);
 	}
 	return (-ETIMEDOUT);
 }
@@ -691,8 +691,16 @@ mlx5e_close_rq(struct mlx5e_rq *rq)
 {
 	rq->enabled = 0;
 	mlx5e_modify_rq(rq, MLX5_RQC_STATE_RDY, MLX5_RQC_STATE_ERR);
-	while (!mlx5_wq_ll_is_empty(&rq->wq))
-		msleep(20);
+}
+
+static void
+mlx5e_close_rq_wait(struct mlx5e_rq *rq)
+{
+	/* wait till RQ is empty */
+	while (!mlx5_wq_ll_is_empty(&rq->wq)) {
+		msleep(4);
+		rq->cq.func(&rq->cq);
+	}
 
 	mlx5e_disable_rq(rq);
 	mlx5e_destroy_rq(rq);
@@ -920,8 +928,16 @@ mlx5e_close_sq(struct mlx5e_sq *sq)
 		mlx5e_send_nop(sq);
 
 	mlx5e_modify_sq(sq, MLX5_SQC_STATE_RDY, MLX5_SQC_STATE_ERR);
-	while (sq->cc != sq->pc)	/* wait till sq is empty */
-		msleep(20);
+}
+
+static void
+mlx5e_close_sq_wait(struct mlx5e_sq *sq)
+{
+	/* wait till SQ is empty */
+	while (sq->cc != sq->pc) {
+		msleep(4);
+		sq->cq.func(&sq->cq);
+	}
 
 	mlx5e_disable_sq(sq);
 	mlx5e_destroy_sq(sq);
@@ -1134,8 +1150,10 @@ mlx5e_open_sqs(struct mlx5e_channel *c,
 	return (0);
 
 err_close_sqs:
-	for (tc--; tc >= 0; tc--)
+	for (tc--; tc >= 0; tc--) {
 		mlx5e_close_sq(&c->sq[tc]);
+		mlx5e_close_sq_wait(&c->sq[tc]);
+	}
 
 	return (err);
 }
@@ -1147,6 +1165,15 @@ mlx5e_close_sqs(struct mlx5e_channel *c)
 
 	for (tc = 0; tc < c->num_tc; tc++)
 		mlx5e_close_sq(&c->sq[tc]);
+}
+
+static void
+mlx5e_close_sqs_wait(struct mlx5e_channel *c)
+{
+	int tc;
+
+	for (tc = 0; tc < c->num_tc; tc++)
+		mlx5e_close_sq_wait(&c->sq[tc]);
 }
 
 static int
@@ -1202,6 +1229,7 @@ mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 
 err_close_sqs:
 	mlx5e_close_sqs(c);
+	mlx5e_close_sqs_wait(c);
 
 err_close_rx_cq:
 	mlx5e_close_cq(&c->rq.cq);
@@ -1222,11 +1250,23 @@ mlx5e_close_channel(struct mlx5e_channel * volatile *pp)
 	/* check if channel is already closed */
 	if (c == NULL)
 		return;
+	mlx5e_close_rq(&c->rq);
+	mlx5e_close_sqs(c);
+}
+
+static void
+mlx5e_close_channel_wait(struct mlx5e_channel * volatile *pp)
+{
+	struct mlx5e_channel *c = *pp;
+
+	/* check if channel is already closed */
+	if (c == NULL)
+		return;
 	/* ensure channel pointer is no longer used */
 	*pp = NULL;
 
-	mlx5e_close_rq(&c->rq);
-	mlx5e_close_sqs(c);
+	mlx5e_close_rq_wait(&c->rq);
+	mlx5e_close_sqs_wait(c);
 	mlx5e_close_cq(&c->rq.cq);
 	mlx5e_close_tx_cqs(c);
 	kfree(c);
@@ -1341,8 +1381,10 @@ mlx5e_open_channels(struct mlx5e_priv *priv)
 	return (0);
 
 err_close_channels:
-	for (i--; i >= 0; i--)
+	for (i--; i >= 0; i--) {
 		mlx5e_close_channel(&priv->channel[i]);
+		mlx5e_close_channel_wait(&priv->channel[i]);
+	}
 
 	kfree(priv->channel);
 	priv->channel = NULL;
@@ -1360,6 +1402,8 @@ mlx5e_close_channels(struct mlx5e_priv *priv)
 
 	for (i = 0; i < priv->params.num_channels; i++)
 		mlx5e_close_channel(&priv->channel[i]);
+	for (i = 0; i < priv->params.num_channels; i++)
+		mlx5e_close_channel_wait(&priv->channel[i]);
 
 	kfree(priv->channel);
 	priv->channel = NULL;
