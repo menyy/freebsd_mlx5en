@@ -183,7 +183,7 @@ mlx5e_rx_cq_function(struct mlx5e_cq *cq)
 {
 	struct mlx5e_rq *rq = container_of(cq, struct mlx5e_rq, cq);
 	spin_lock(&rq->lock);
-	mlx5e_poll_rx_cq(rq, 4096);
+	mlx5e_poll_rx_cq(rq, MLX5E_BUDGET_MAX);
 	mlx5e_post_rx_wqes(rq);
 	mlx5e_cq_arm(cq);
 	spin_unlock(&rq->lock);

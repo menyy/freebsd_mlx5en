@@ -68,6 +68,8 @@
 
 #define	MLX5E_MAX_NUM_TC	8
 
+#define	MLX5E_BUDGET_MAX	8192
+
 #define	MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE                0x7
 #define	MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE                0xa
 #define	MLX5E_PARAMS_MAXIMUM_LOG_SQ_SIZE                0xd
