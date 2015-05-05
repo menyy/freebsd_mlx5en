@@ -264,8 +264,10 @@ mlx5e_update_carrier_work(struct work_struct *work)
 }
 
 static void
-__mlx5e_update_stats(struct mlx5e_priv *priv)
+mlx5e_update_stats_work(struct work_struct *work)
 {
+	struct mlx5e_priv *priv = container_of(work, struct mlx5e_priv,
+	    update_stats_work);
 	struct mlx5_core_dev *mdev = priv->mdev;
 	struct mlx5e_vport_stats *s = &priv->stats.vport;
 	struct mlx5e_rq_stats *rq_stats;
@@ -276,9 +278,12 @@ __mlx5e_update_stats(struct mlx5e_priv *priv)
 	u64 tx_offload_none;
 	int i, j;
 
+	mutex_lock(&priv->state_lock);
 	out = mlx5_vzalloc(outlen);
 	if (out == NULL)
-		return;
+		goto free_out;
+	if (test_bit(MLX5E_STATE_OPENED, &priv->state) == 0)
+		goto free_out;
 
 	/* Collect firts the SW counters and then HW for consistency */
 	s->tso_packets = 0;
@@ -386,6 +391,7 @@ __mlx5e_update_stats(struct mlx5e_priv *priv)
 
 free_out:
 	kvfree(out);
+	mutex_unlock(&priv->state_lock);
 }
 
 static void
@@ -393,10 +399,7 @@ mlx5e_update_stats(unsigned long data)
 {
 	struct mlx5e_priv *priv = (struct mlx5e_priv *)data;
 
-	mutex_lock(&priv->state_lock);
-	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
-		__mlx5e_update_stats(priv);
-	mutex_unlock(&priv->state_lock);
+	schedule_work(&priv->update_stats_work);
 }
 
 static void
@@ -1933,6 +1936,7 @@ mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
 	spin_lock_init(&priv->async_events_spinlock);
 	mutex_init(&priv->state_lock);
 
+	INIT_WORK(&priv->update_stats_work, mlx5e_update_stats_work);
 	INIT_WORK(&priv->update_carrier_work, mlx5e_update_carrier_work);
 	INIT_WORK(&priv->set_rx_mode_work, mlx5e_set_rx_mode_work);
 }
