@@ -208,7 +208,7 @@ mlx5e_update_carrier(struct mlx5e_priv *priv)
 			priv->netdev->if_baudrate =
 			    mlx5e_mode_table[i].baudrate;
 			priv->media_active_last =
-			    IFM_ETHER_SUBTYPE_SET(mlx5e_mode_table[i].subtype) |
+			    mlx5e_mode_table[i].subtype | IFM_ETHER |
 			    IFM_FDX | priv->media_active_user;
 		}
 	}
@@ -1893,6 +1893,7 @@ mlx5e_ioctl(struct ifnet *netdev, u_long command, caddr_t data)
 		break;
 	case SIOCSIFMEDIA:
 	case SIOCGIFMEDIA:
+	case SIOCGIFXMEDIA:
 		ifr = (struct ifreq *)data;
 		error = ifmedia_ioctl(netdev, ifr, &priv->media, command);
 		break;
@@ -2126,21 +2127,21 @@ mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 	/* Setup supported medias */
 	ifmedia_init(&priv->media, IFM_IMASK | IFM_ETH_FMASK,
 	    mlx5e_media_change, mlx5e_media_status);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_1000_CX_SGMII) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_1000_KX) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_10G_CX4) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_10G_KX4) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_10G_KR) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_40G_CR4) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_40G_KR4) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_10G_CR1) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_10G_SR) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_10G_ER) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_40G_SR4) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_40G_LR4) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_100G_CR4) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_100G_SR4) | IFM_FDX, 0, NULL);
-	ifmedia_add(&priv->media, IFM_ETHER_SUBTYPE_SET(IFM_100G_KR4) | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_1000_CX_SGMII | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_1000_KX | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_10G_CX4 | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_10G_KX4 | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_10G_KR | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_40G_CR4 | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_40G_KR4 | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_10G_CR1 | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_10G_SR | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_10G_ER | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_40G_SR4 | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_40G_LR4 | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_100G_CR4 | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_100G_SR4 | IFM_FDX, 0, NULL);
+	ifmedia_add(&priv->media, IFM_ETHER | IFM_100G_KR4 | IFM_FDX, 0, NULL);
 	ifmedia_add(&priv->media, IFM_ETHER | IFM_AUTO, 0, NULL);
 	ifmedia_set(&priv->media, IFM_ETHER | IFM_AUTO);
 
