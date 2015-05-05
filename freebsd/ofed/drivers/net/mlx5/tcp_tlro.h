@@ -51,6 +51,8 @@ struct tlro_mbuf_data {
 	int	data_off;
 	int	ip_hdrlen;
 	int	ip_len;
+	uint32_t tcp_ts;
+	uint32_t tcp_ts_reply;
 	uint16_t tcp_len;
 	uint8_t	ip_version;
 	uint8_t buf_length;	/* in 32-bit words */
