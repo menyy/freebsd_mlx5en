@@ -773,7 +773,8 @@ mlx5e_create_sq(struct mlx5e_channel *c,
 	sq->uar_map = sq->uar.map;
 	sq->bf_buf_size = (1 << MLX5_CAP_GEN(mdev, log_bf_reg_size)) / 2;
 
-	if (mlx5e_alloc_sq_db(sq))
+	err = mlx5e_alloc_sq_db(sq);
+	if (err)
 		goto err_sq_wq_destroy;
 
 	sq->pdev = c->pdev;
