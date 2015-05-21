@@ -148,10 +148,11 @@ mlx5e_create_ethtool(struct mlx5e_priv *priv)
 	/* set some defaults */
 	priv->params_ethtool.tx_queue_size_max = 1 << MLX5E_PARAMS_MAXIMUM_LOG_SQ_SIZE;
 	priv->params_ethtool.rx_queue_size_max = 1 << MLX5E_PARAMS_MAXIMUM_LOG_RQ_SIZE;
-
 	priv->params_ethtool.tx_queue_size = 1 << priv->params.log_sq_size;
 	priv->params_ethtool.rx_queue_size = 1 << priv->params.log_rq_size;
 	priv->params_ethtool.channels = priv->params.num_channels;
+	priv->params_ethtool.coalesce_pkts_max = MLX5E_FLD_MAX(cqc, cq_max_count);
+	priv->params_ethtool.coalesce_usecs_max = MLX5E_FLD_MAX(cqc, cq_period);
 	priv->params_ethtool.rx_coalesce_usecs = priv->params.rx_cq_moderation_usec;
 	priv->params_ethtool.rx_coalesce_pkts = priv->params.rx_cq_moderation_pkts;
 	priv->params_ethtool.tx_coalesce_usecs = priv->params.tx_cq_moderation_usec;
