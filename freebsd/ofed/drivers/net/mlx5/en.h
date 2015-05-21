@@ -91,7 +91,7 @@
 #define	MLX5E_CACHELINE_SIZE CACHE_LINE_SIZE
 #define	MLX5E_MTU_OVERHEAD \
     (ETHER_HDR_LEN + ETHER_VLAN_ENCAP_LEN + MLX5E_NET_IP_ALIGN)
-#define	MLX5E_MTU_MAX					0xffff
+#define	MLX5E_MTU_MAX			MIN(0xffff, MJUM16BYTES)
 
 struct mlx5_core_dev;
 struct mlx5e_cq;

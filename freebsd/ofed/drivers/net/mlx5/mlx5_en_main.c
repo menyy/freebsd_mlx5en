@@ -487,21 +487,33 @@ mlx5e_create_rq(struct mlx5e_channel *c,
 
 	rq->wq.db = &rq->wq.db[MLX5_RCV_DBR];
 
+	rq->wqe_sz = priv->netdev->if_mtu + MLX5E_MTU_OVERHEAD;
+	if (rq->wqe_sz > MJUM16BYTES) {
+		err = -ENOMEM;
+		goto err_rq_wq_destroy;
+	} else if (rq->wqe_sz > MJUM9BYTES) {
+		rq->wqe_sz = MJUM16BYTES;
+	} else if (rq->wqe_sz > MJUMPAGESIZE) {
+		rq->wqe_sz = MJUM9BYTES;
+	} else if (rq->wqe_sz > MCLBYTES) {
+		rq->wqe_sz = MJUMPAGESIZE;
+	} else {
+		rq->wqe_sz = MCLBYTES;
+	}
+
 	wq_sz = mlx5_wq_ll_get_size(&rq->wq);
 	rq->mbuf = kzalloc(wq_sz * sizeof(rq->mbuf[0]), GFP_KERNEL);
 	if (rq->mbuf == NULL) {
 		err = -ENOMEM;
 		goto err_rq_wq_destroy;
 	}
-	rq->wqe_sz = priv->netdev->if_mtu + MLX5E_MTU_OVERHEAD;
-	if (rq->wqe_sz > MLX5E_MTU_MAX)
-		rq->wqe_sz = MLX5E_MTU_MAX;
 
 	for (i = 0; i < wq_sz; i++) {
 		struct mlx5e_rx_wqe *wqe = mlx5_wq_ll_get_wqe(&rq->wq, i);
+		uint32_t byte_count = rq->wqe_sz - MLX5E_NET_IP_ALIGN;
 
 		wqe->data.lkey = c->mkey_be;
-		wqe->data.byte_count = cpu_to_be32(rq->wqe_sz);
+		wqe->data.byte_count = cpu_to_be32(byte_count | MLX5_HW_START_PADDING);
 	}
 
 	rq->pdev = c->pdev;

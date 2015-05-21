@@ -39,10 +39,14 @@ mlx5e_alloc_rx_wqe(struct mlx5e_rq *rq,
 	struct mbuf *mb;
 	dma_addr_t dma_addr;
 
-	mb = m_get2(rq->wqe_sz, M_NOWAIT, MT_DATA, M_PKTHDR);
+	mb = m_getjcl(M_NOWAIT, MT_DATA, M_PKTHDR, rq->wqe_sz);
 	if (unlikely(!mb))
 		return (-ENOMEM);
 
+	/* set initial mbuf length */
+	mb->m_pkthdr.len = mb->m_len = rq->wqe_sz;
+
+	/* get IP header aligned */
 	m_adj(mb, MLX5E_NET_IP_ALIGN);
 
 	dma_addr = dma_map_single(rq->pdev,
