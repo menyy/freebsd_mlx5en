@@ -38,10 +38,8 @@ mlx5e_get_cqe(struct mlx5e_cq *cq)
 	struct mlx5_cqwq *wq = &cq->wq;
 	u32 ci = mlx5_cqwq_get_ci(wq);
 	struct mlx5_cqe64 *cqe = mlx5_cqwq_get_wqe(wq, ci);
-	int cqe_ownership_bit = cqe->op_own & MLX5_CQE_OWNER_MASK;
-	int sw_ownership_val = mlx5_cqwq_get_wrap_cnt(wq) & 1;
 
-	if (cqe_ownership_bit != sw_ownership_val)
+	if ((cqe->op_own ^ mlx5_cqwq_get_wrap_cnt(wq)) & MLX5_CQE_OWNER_MASK)
 		return (NULL);
 
 	mlx5_cqwq_pop(wq);
