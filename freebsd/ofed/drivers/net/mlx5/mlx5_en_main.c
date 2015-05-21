@@ -1070,12 +1070,8 @@ static int
 mlx5e_open_cq(struct mlx5e_channel *c,
     struct mlx5e_cq_param *param,
     struct mlx5e_cq *cq,
-    mlx5e_cq_func_t *func,
-    u16 moderation_usecs,
-    u16 moderation_frames)
+    mlx5e_cq_func_t *func)
 {
-	struct mlx5e_priv *priv = c->priv;
-	struct mlx5_core_dev *mdev = priv->mdev;
 	int err;
 
 	err = mlx5e_create_cq(c, param, cq, func);
@@ -1083,11 +1079,6 @@ mlx5e_open_cq(struct mlx5e_channel *c,
 		return (err);
 
 	err = mlx5e_enable_cq(cq, param);
-	if (err)
-		goto err_destroy_cq;
-
-	err = mlx5_core_modify_cq_moderation(mdev, &cq->mcq,
-	    moderation_usecs, moderation_frames);
 	if (err)
 		goto err_destroy_cq;
 
@@ -1110,7 +1101,6 @@ static int
 mlx5e_open_tx_cqs(struct mlx5e_channel *c,
     struct mlx5e_channel_param *cparam)
 {
-	struct mlx5e_priv *priv = c->priv;
 	int err;
 	int tc;
 
@@ -1121,9 +1111,7 @@ mlx5e_open_tx_cqs(struct mlx5e_channel *c,
 	for (tc = 0; tc < c->num_tc; tc++) {
 		/* open completion queue */
 		err = mlx5e_open_cq(c, &cparam->tx_cq, &c->sq[tc].cq,
-		    &mlx5e_tx_cq_function,
-		    priv->params.tx_cq_moderation_usec,
-		    priv->params.tx_cq_moderation_pkts);
+		    &mlx5e_tx_cq_function);
 		if (err)
 			goto err_close_tx_cqs;
 	}
@@ -1217,9 +1205,7 @@ mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 
 	/* open completion queue */
 	err = mlx5e_open_cq(c, &cparam->rx_cq, &c->rq.cq,
-	    &mlx5e_rx_cq_function,
-	    priv->params.rx_cq_moderation_usec,
-	    priv->params.rx_cq_moderation_pkts);
+	    &mlx5e_rx_cq_function);
 	if (err)
 		goto err_close_tx_cqs;
 
