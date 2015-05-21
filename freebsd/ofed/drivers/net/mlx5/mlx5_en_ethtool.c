@@ -107,7 +107,7 @@ mlx5e_ethtool_handler(SYSCTL_HANDLER_ARGS)
 		priv->params_ethtool.rx_coalesce_pkts =
 		    MLX5E_FLD_MAX(cqc, cq_max_count);
 	}
-	priv->params.rx_cq_moderation_usec = priv->params_ethtool.rx_coalesce_pkts;
+	priv->params.rx_cq_moderation_pkts = priv->params_ethtool.rx_coalesce_pkts;
 
 	/* import TX coal time */
 	if (priv->params_ethtool.tx_coalesce_usecs < 1)
@@ -126,7 +126,7 @@ mlx5e_ethtool_handler(SYSCTL_HANDLER_ARGS)
 	    MLX5E_FLD_MAX(cqc, cq_max_count)) {
 		priv->params_ethtool.tx_coalesce_pkts = MLX5E_FLD_MAX(cqc, cq_max_count);
 	}
-	priv->params.tx_cq_moderation_usec = priv->params_ethtool.tx_coalesce_pkts;
+	priv->params.tx_cq_moderation_pkts = priv->params_ethtool.tx_coalesce_pkts;
 
 	if (was_opened)
 		mlx5e_open_locked(priv->netdev);
