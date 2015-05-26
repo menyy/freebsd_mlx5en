@@ -32,28 +32,23 @@
 
 #include "en.h"
 
-#define	MLX5E_SQ_NOPS_ROOM MLX5_SEND_WQE_MAX_WQEBBS
-#define	MLX5E_SQ_STOP_ROOM (MLX5_SEND_WQE_MAX_WQEBBS + MLX5E_SQ_NOPS_ROOM)
-
 void
 mlx5e_send_nop(struct mlx5e_sq *sq, bool notify_hw)
 {
-	struct mlx5_wq_cyc *wq = &sq->wq;
-	u16 pi = sq->pc & wq->sz_m1;
-	struct mlx5e_tx_wqe *wqe = mlx5_wq_cyc_get_wqe(wq, pi);
+	u16 pi = sq->pc & sq->wq.sz_m1;
+	struct mlx5e_tx_wqe *wqe = mlx5_wq_cyc_get_wqe(&sq->wq, pi);
 	struct mlx5_wqe_ctrl_seg *cseg = &wqe->ctrl;
 
 	memset(cseg, 0, sizeof(*cseg));
 
 	cseg->opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | MLX5_OPCODE_NOP);
 	cseg->qpn_ds = cpu_to_be32((sq->sqn << 8) | 0x01);
+	cseg->fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
 
 	sq->mbuf[pi] = NULL;
 	sq->pc++;
-	if (notify_hw) {
-		cseg->fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
+	if (notify_hw)
 		mlx5e_tx_notify_hw(sq, wqe);
-	}
 }
 
 static void
@@ -241,7 +236,6 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 	struct mlx5_wqe_eth_seg *eseg;
 	struct net_device *netdev;
 	struct mlx5e_tx_wqe *wqe;
-	struct mlx5_wq_cyc *wq;
 	struct mbuf *mx;
 
 	u8 opcode = MLX5_OPCODE_SEND;
@@ -250,15 +244,21 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 	u16 ihs;
 	u16 pi;
 
+	/* fill SQ edge with NOPs to avoid WQE wrap around */
+	while ((sq->pc & sq->wq.sz_m1) > sq->edge &&
+	    mlx5e_sq_has_room_for(sq, 1)) {
+		mlx5e_send_nop(sq, false);
+	}
+
 	/* setup local variables */
-	wq = &sq->wq;
-	pi = sq->pc & wq->sz_m1;
-	wqe = mlx5_wq_cyc_get_wqe(wq, pi);
+	pi = sq->pc & sq->wq.sz_m1;
+	wqe = mlx5_wq_cyc_get_wqe(&sq->wq, pi);
 	cseg = &wqe->ctrl;
 	eseg = &wqe->eth;
 	netdev = sq->channel->netdev;
 
-	if (unlikely(!mlx5e_sq_has_room_for(sq, MLX5E_SQ_STOP_ROOM))) {
+	/* check if queue is full */
+	if (unlikely(!mlx5e_sq_has_room_for(sq, MLX5_SEND_WQE_MAX_WQEBBS))) {
 		sq->stats.dropped++;
 		m_freem(mb);
 		return (ENOBUFS);
@@ -363,10 +363,6 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 	    MLX5_SEND_WQEBB_NUM_DS);
 	sq->pc += MLX5E_TX_MBUF_CB(mb)->num_wqebbs;
 
-	/* fill SQ edge with NOPs to avoid WQE wrap around */
-	while ((sq->pc & wq->sz_m1) > sq->edge)
-		mlx5e_send_nop(sq, false);
-
 	mlx5e_tx_notify_hw(sq, wqe);
 
 	sq->stats.packets++;
@@ -412,6 +408,7 @@ mlx5e_poll_tx_cq(struct mlx5e_sq *sq)
 
 		ci = sqcc & sq->wq.sz_m1;
 		mb = sq->mbuf[ci];
+		sq->mbuf[ci] = NULL;	/* clear mbuf pointer */
 
 		if (unlikely(mb == NULL)) {
 			/* nop */
