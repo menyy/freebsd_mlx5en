@@ -376,13 +376,12 @@ dma_unmap_wqe_err:
 }
 
 static void
-mlx5e_poll_tx_cq(struct mlx5e_sq *sq)
+mlx5e_poll_tx_cq(struct mlx5e_sq *sq, int budget)
 {
 	u32 dma_fifo_cc;
 	u32 nbytes;
 	u16 npkts;
 	u16 sqcc;
-	int i;
 
 	npkts = 0;
 	nbytes = 0;
@@ -396,7 +395,7 @@ mlx5e_poll_tx_cq(struct mlx5e_sq *sq)
 	/* avoid dirtying sq cache line every cqe */
 	dma_fifo_cc = sq->dma_fifo_cc;
 
-	for (i = 0; i < 128; i++) {
+	while (budget--) {
 		struct mlx5_cqe64 *cqe;
 		struct mbuf *mb;
 		u16 ci;
@@ -455,7 +454,7 @@ mlx5e_xmit(struct net_device *dev, struct mbuf *mb)
 		return (ENXIO);
 	}
 	spin_lock(&sq->lock);
-	mlx5e_poll_tx_cq(sq);
+	mlx5e_poll_tx_cq(sq, MLX5E_BUDGET_MAX);
 	ret = mlx5e_sq_xmit(sq, mb);
 	spin_unlock(&sq->lock);
 	return (ret);
@@ -467,7 +466,7 @@ mlx5e_tx_cq_function(struct mlx5e_cq *cq)
 	struct mlx5e_sq *sq = container_of(cq, struct mlx5e_sq, cq);
 
 	spin_lock(&sq->lock);
-	mlx5e_poll_tx_cq(sq);
+	mlx5e_poll_tx_cq(sq, MLX5E_BUDGET_MAX);
 	mlx5e_cq_arm(cq);
 	spin_unlock(&sq->lock);
 }
