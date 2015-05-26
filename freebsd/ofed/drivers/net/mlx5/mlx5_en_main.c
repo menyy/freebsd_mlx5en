@@ -2066,6 +2066,10 @@ static const char *mlx5e_vport_stats_desc[] = {
 	MLX5E_VPORT_STATS(MLX5E_STATS_DESC)
 };
 
+static const char *mlx5e_pport_stats_desc[] = {
+	MLX5E_PPORT_STATS(MLX5E_STATS_DESC)
+};
+
 static void *
 mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 {
@@ -2196,8 +2200,12 @@ mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 	mlx5e_enable_async_events(priv);
 
 	mlx5e_create_stats(&priv->stats.vport.ctx, SYSCTL_CHILDREN(priv->sysctl),
-	    "stats", mlx5e_vport_stats_desc, MLX5E_VPORT_STATS_NUM,
+	    "vstats", mlx5e_vport_stats_desc, MLX5E_VPORT_STATS_NUM,
 	    priv->stats.vport.arg);
+
+	mlx5e_create_stats(&priv->stats.pport.ctx, SYSCTL_CHILDREN(priv->sysctl),
+	    "pstats", mlx5e_pport_stats_desc, MLX5E_PPORT_STATS_NUM,
+	    priv->stats.pport.arg);
 
 	mlx5e_create_ethtool(priv);
 
@@ -2240,6 +2248,7 @@ mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 
 	/* destroy all remaining sysctl nodes */
 	sysctl_ctx_free(&priv->stats.vport.ctx);
+	sysctl_ctx_free(&priv->stats.pport.ctx);
 	sysctl_ctx_free(&priv->sysctl_ctx);
 
 	/* Unregister device - this will close the port if it was up */
