@@ -1697,6 +1697,29 @@ mlx5e_close_tirs(struct mlx5e_priv *priv)
 		mlx5e_close_tir(priv, i);
 }
 
+static int
+mlx5e_set_dev_port_mtu(struct net_device *netdev, int sw_mtu)
+{
+	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct mlx5_core_dev *mdev = priv->mdev;
+	int hw_mtu;
+	int err;
+
+	err = mlx5_set_port_mtu(mdev, sw_mtu + MLX5E_MTU_OVERHEAD);
+	if (err)
+		return (err);
+
+	mlx5_query_port_oper_mtu(mdev, &hw_mtu);
+
+	netdev->if_mtu = (hw_mtu - MLX5E_MTU_OVERHEAD);
+
+	if (netdev->if_mtu != sw_mtu) {
+		if_printf(netdev, "Port MTU %d is different than "
+		    "netdev mtu %d\n", sw_mtu, netdev->if_mtu);
+	}
+	return (0);
+}
+
 int
 mlx5e_open_locked(struct net_device *netdev)
 {
@@ -1878,7 +1901,7 @@ mlx5e_ioctl(struct ifnet *netdev, u_long command, caddr_t data)
 				mlx5e_close_locked(netdev);
 
 			/* set new MTU */
-			netdev->if_mtu = ifr->ifr_mtu;
+			mlx5e_set_dev_port_mtu(netdev, ifr->ifr_mtu);
 
 			if (was_opened)
 				mlx5e_open_locked(netdev);
@@ -2130,6 +2153,9 @@ mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 		goto err_dealloc_pd;
 	}
 	mlx5_query_nic_vport_mac_address(priv->mdev, dev_addr);
+
+	/* set default MTU */
+	mlx5e_set_dev_port_mtu(netdev, netdev->if_mtu);
 
 	ether_ifattach(netdev, dev_addr);
 
