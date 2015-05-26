@@ -32,6 +32,30 @@
 
 #include "en.h"
 
+#define	MLX5E_SQ_NOPS_ROOM MLX5_SEND_WQE_MAX_WQEBBS
+#define	MLX5E_SQ_STOP_ROOM (MLX5_SEND_WQE_MAX_WQEBBS + MLX5E_SQ_NOPS_ROOM)
+
+void
+mlx5e_send_nop(struct mlx5e_sq *sq, bool notify_hw)
+{
+	struct mlx5_wq_cyc *wq = &sq->wq;
+	u16 pi = sq->pc & wq->sz_m1;
+	struct mlx5e_tx_wqe *wqe = mlx5_wq_cyc_get_wqe(wq, pi);
+	struct mlx5_wqe_ctrl_seg *cseg = &wqe->ctrl;
+
+	memset(cseg, 0, sizeof(*cseg));
+
+	cseg->opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | MLX5_OPCODE_NOP);
+	cseg->qpn_ds = cpu_to_be32((sq->sqn << 8) | 0x01);
+
+	sq->mbuf[pi] = NULL;
+	sq->pc++;
+	if (notify_hw) {
+		cseg->fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
+		mlx5e_tx_notify_hw(sq, wqe);
+	}
+}
+
 static void
 mlx5e_dma_pop_last_pushed(struct mlx5e_sq *sq, dma_addr_t *addr,
     u32 * size)
@@ -234,7 +258,7 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 	eseg = &wqe->eth;
 	netdev = sq->channel->netdev;
 
-	if (unlikely(!mlx5e_sq_has_room_for(sq, MLX5_SEND_WQE_MAX_WQEBBS))) {
+	if (unlikely(!mlx5e_sq_has_room_for(sq, MLX5E_SQ_STOP_ROOM))) {
 		sq->stats.dropped++;
 		m_freem(mb);
 		return (ENOBUFS);
@@ -338,6 +362,10 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 	MLX5E_TX_MBUF_CB(mb)->num_wqebbs = DIV_ROUND_UP(ds_cnt,
 	    MLX5_SEND_WQEBB_NUM_DS);
 	sq->pc += MLX5E_TX_MBUF_CB(mb)->num_wqebbs;
+
+	/* fill SQ edge with NOPs to avoid WQE wrap around */
+	while ((sq->pc & wq->sz_m1) > sq->edge)
+		mlx5e_send_nop(sq, false);
 
 	mlx5e_tx_notify_hw(sq, wqe);
 

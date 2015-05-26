@@ -381,6 +381,7 @@ struct mlx5e_sq {
 	void __iomem *uar_map;
 	u32	sqn;
 	u32	bf_buf_size;
+	u16	edge;
 	struct device *pdev;
 	u32	mkey_be;
 	unsigned long state;
@@ -624,5 +625,6 @@ void	mlx5e_create_ethtool(struct mlx5e_priv *);
 void	mlx5e_create_stats(struct sysctl_ctx_list *,
     struct sysctl_oid_list *, const char *,
     const char **, unsigned, u64 *);
+void	mlx5e_send_nop(struct mlx5e_sq *, bool);
 
 #endif					/* _MLX5_EN_H_ */

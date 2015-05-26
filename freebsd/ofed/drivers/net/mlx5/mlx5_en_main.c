@@ -485,25 +485,6 @@ mlx5e_disable_async_events(struct mlx5e_priv *priv)
 	spin_unlock_irq(&priv->async_events_spinlock);
 }
 
-static void
-mlx5e_send_nop(struct mlx5e_sq *sq)
-{
-	struct mlx5_wq_cyc *wq = &sq->wq;
-	u16 pi = sq->pc & wq->sz_m1;
-	struct mlx5e_tx_wqe *wqe = mlx5_wq_cyc_get_wqe(wq, pi);
-	struct mlx5_wqe_ctrl_seg *cseg = &wqe->ctrl;
-
-	memset(cseg, 0, sizeof(*cseg));
-
-	cseg->opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | MLX5_OPCODE_NOP);
-	cseg->qpn_ds = cpu_to_be32((sq->sqn << 8) | 0x01);
-	cseg->fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
-
-	sq->mbuf[pi] = NULL;
-	sq->pc++;
-	mlx5e_tx_notify_hw(sq, wqe);
-}
-
 static const char *mlx5e_rq_stats_desc[] = {
 	MLX5E_RQ_STATS(MLX5E_STATS_DESC)
 };
@@ -729,7 +710,7 @@ mlx5e_open_rq(struct mlx5e_channel *c,
 	 * "mlx5e_post_rx_wqes()":
 	 */
 	for (i = 0; i != c->num_tc; i++)
-		mlx5e_send_nop(&c->sq[i]);
+		mlx5e_send_nop(&c->sq[i], true);
 	return (0);
 
 err_disable_rq:
@@ -823,6 +804,7 @@ mlx5e_create_sq(struct mlx5e_channel *c,
 	sq->mkey_be = c->mkey_be;
 	sq->channel = c;
 	sq->tc = tc;
+	sq->edge = sq->wq.sz_m1 + 1 - MLX5_SEND_WQE_MAX_WQEBBS;
 
 	snprintf(buffer, sizeof(buffer), "txstat%dtc%d", c->ix, tc);
 	mlx5e_create_stats(&sq->stats.ctx, SYSCTL_CHILDREN(priv->sysctl),
@@ -878,7 +860,6 @@ mlx5e_enable_sq(struct mlx5e_sq *sq, struct mlx5e_sq_param *param)
 
 	memcpy(sqc, param->sqc, sizeof(param->sqc));
 
-	MLX5_SET(sqc, sqc, user_index, sq->tc);
 	MLX5_SET(sqc, sqc, tis_num_0, priv->tisn[sq->tc]);
 	MLX5_SET(sqc, sqc, cqn, c->sq[sq->tc].cq.mcq.cqn);
 	MLX5_SET(sqc, sqc, state, MLX5_SQC_STATE_RST);
@@ -980,7 +961,7 @@ mlx5e_close_sq(struct mlx5e_sq *sq)
 
 	/* ensure hw is notified of all pending wqes */
 	if (mlx5e_sq_has_room_for(sq, 1))
-		mlx5e_send_nop(sq);
+		mlx5e_send_nop(sq, true);
 
 	mlx5e_modify_sq(sq, MLX5_SQC_STATE_RDY, MLX5_SQC_STATE_ERR);
 }
