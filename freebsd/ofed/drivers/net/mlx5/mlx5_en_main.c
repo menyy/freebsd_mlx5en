@@ -264,6 +264,46 @@ mlx5e_update_carrier_work(struct work_struct *work)
 }
 
 static void
+mlx5e_update_pport_counters(struct mlx5e_priv *priv)
+{
+	struct mlx5_core_dev *mdev = priv->mdev;
+	struct mlx5e_pport_stats *s = &priv->stats.pport;
+	u32 *in;
+	u32 *out;
+	u64 *ptr;
+	unsigned sz = MLX5_ST_SZ_BYTES(ppcnt_reg);
+	unsigned x;
+	unsigned y;
+
+	in  = mlx5_vzalloc(sz);
+	out = mlx5_vzalloc(sz);
+	if (in == NULL || out == NULL)
+		goto free_out;
+
+	ptr = (uint64_t *)MLX5_ADDR_OF(ppcnt_reg, out, counter_set);
+
+	MLX5_SET(ppcnt_reg, in, local_port, 1);
+
+	MLX5_SET(ppcnt_reg, in, grp, MLX5_IEEE_802_3_COUNTERS_GROUP);
+	mlx5_core_access_reg(mdev, in, sz, out, sz, MLX5_REG_PPCNT, 0, 0);
+	for (x = y = 0; x != MLX5E_PPORT_IEEE802_3_STATS_NUM; x++, y++)
+		s->arg[y] = be64toh(ptr[x]);
+
+	MLX5_SET(ppcnt_reg, in, grp, MLX5_RFC_2863_COUNTERS_GROUP);
+	mlx5_core_access_reg(mdev, in, sz, out, sz, MLX5_REG_PPCNT, 0, 0);
+	for (x = 0; x != MLX5E_PPORT_RFC2863_STATS_NUM; x++, y++)
+		s->arg[y] = be64toh(ptr[x]);
+
+	MLX5_SET(ppcnt_reg, in, grp, MLX5_RFC_2819_COUNTERS_GROUP);
+	mlx5_core_access_reg(mdev, in, sz, out, sz, MLX5_REG_PPCNT, 0, 0);
+	for (x = 0; x != MLX5E_PPORT_RFC2819_STATS_NUM; x++, y++)
+		s->arg[y] = be64toh(ptr[x]);
+free_out:
+	kvfree(in);
+	kvfree(out);
+}
+
+static void
 mlx5e_update_stats_work(struct work_struct *work)
 {
 	struct mlx5e_priv *priv = container_of(work, struct mlx5e_priv,
@@ -389,6 +429,8 @@ mlx5e_update_stats_work(struct work_struct *work)
 	s->tx_csum_offload = s->tx_packets - tx_offload_none;
 	s->rx_csum_good = s->rx_packets - s->rx_csum_none;
 
+	/* Update per port counters */
+	mlx5e_update_pport_counters(priv);
 free_out:
 	kvfree(out);
 	mutex_unlock(&priv->state_lock);
@@ -2106,7 +2148,7 @@ mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 		    __func__, err);
 		goto err_dealloc_pd;
 	}
-	mlx5_query_vport_mac_address(priv->mdev, dev_addr);
+	mlx5_query_nic_vport_mac_address(priv->mdev, dev_addr);
 
 	ether_ifattach(netdev, dev_addr);
 
