@@ -804,7 +804,6 @@ mlx5e_create_sq(struct mlx5e_channel *c,
 	sq->mkey_be = c->mkey_be;
 	sq->channel = c;
 	sq->tc = tc;
-	sq->edge = sq->wq.sz_m1 + 1 - MLX5_SEND_WQE_MAX_WQEBBS;
 
 	snprintf(buffer, sizeof(buffer), "txstat%dtc%d", c->ix, tc);
 	mlx5e_create_stats(&sq->stats.ctx, SYSCTL_CHILDREN(priv->sysctl),

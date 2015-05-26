@@ -237,18 +237,22 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 	struct net_device *netdev;
 	struct mlx5e_tx_wqe *wqe;
 	struct mbuf *mx;
-
-	u8 opcode = MLX5_OPCODE_SEND;
 	dma_addr_t dma_addr = 0;
 	u16 ds_cnt;
 	u16 ihs;
 	u16 pi;
+	u8 opcode;
 
-	/* fill SQ edge with NOPs to avoid WQE wrap around */
-	while ((sq->pc & sq->wq.sz_m1) > sq->edge &&
-	    mlx5e_sq_has_room_for(sq, 1)) {
-		mlx5e_send_nop(sq, false);
+	/* check if queue is full */
+	if (unlikely(!mlx5e_sq_has_room_for(sq, 2 * MLX5_SEND_WQE_MAX_WQEBBS))) {
+		sq->stats.dropped++;
+		m_freem(mb);
+		return (ENOBUFS);
 	}
+
+	/* align SQ edge with NOPs to avoid WQE wrap around */
+	while (((~sq->pc) & sq->wq.sz_m1) < (MLX5_SEND_WQE_MAX_WQEBBS - 1))
+		mlx5e_send_nop(sq, false);
 
 	/* setup local variables */
 	pi = sq->pc & sq->wq.sz_m1;
@@ -257,12 +261,6 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 	eseg = &wqe->eth;
 	netdev = sq->channel->netdev;
 
-	/* check if queue is full */
-	if (unlikely(!mlx5e_sq_has_room_for(sq, MLX5_SEND_WQE_MAX_WQEBBS))) {
-		sq->stats.dropped++;
-		m_freem(mb);
-		return (ENOBUFS);
-	}
 	memset(wqe, 0, sizeof(*wqe));
 
 	/*
@@ -310,6 +308,7 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 		sq->stats.tso_packets++;
 		sq->stats.tso_bytes += payload_len;
 	} else {
+		opcode = MLX5_OPCODE_SEND;
 		ihs = mlx5e_get_inline_hdr_size(sq, mb);
 		MLX5E_TX_MBUF_CB(mb)->num_bytes =
 		    max_t (unsigned int, mb->m_pkthdr.len, ETHER_MIN_LEN - ETHER_CRC_LEN);

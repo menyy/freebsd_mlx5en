@@ -381,7 +381,6 @@ struct mlx5e_sq {
 	void __iomem *uar_map;
 	u32	sqn;
 	u32	bf_buf_size;
-	u16	edge;
 	struct device *pdev;
 	u32	mkey_be;
 	unsigned long state;
