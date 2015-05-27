@@ -48,7 +48,7 @@ mlx5e_send_nop(struct mlx5e_sq *sq, bool notify_hw)
 	sq->mbuf[pi] = NULL;
 	sq->pc++;
 	if (notify_hw)
-		mlx5e_tx_notify_hw(sq, wqe);
+		mlx5e_tx_notify_hw(sq, wqe, 0);
 }
 
 static void
@@ -362,7 +362,7 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 	    MLX5_SEND_WQEBB_NUM_DS);
 	sq->pc += MLX5E_TX_MBUF_CB(mb)->num_wqebbs;
 
-	mlx5e_tx_notify_hw(sq, wqe);
+	mlx5e_tx_notify_hw(sq, wqe, 0);
 
 	sq->stats.packets++;
 	return (0);

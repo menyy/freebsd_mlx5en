@@ -72,8 +72,6 @@
 
 #define	MLX5E_MAX_NUM_TC	8
 
-#define	MLX5E_BUDGET_MAX	8192
-
 #define	MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE                0x7
 #define	MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE                0xa
 #define	MLX5E_PARAMS_MAXIMUM_LOG_SQ_SIZE                0xd
@@ -92,6 +90,9 @@
 #define	MLX5E_MTU_OVERHEAD \
     (ETHER_HDR_LEN + ETHER_VLAN_ENCAP_LEN + MLX5E_NET_IP_ALIGN)
 #define	MLX5E_MTU_MAX			MIN(0xffff, MJUM16BYTES)
+
+#define	MLX5E_BUDGET_MAX	8192	/* RX and TX */
+#define	MLX5E_SQ_BF_BUDGET	16
 
 struct mlx5_core_dev;
 struct mlx5e_cq;
@@ -364,9 +365,9 @@ struct mlx5e_sq {
 	u32	dma_fifo_cc;
 
 	/* dirtied @xmit */
-	u16 pc __aligned(MLX5E_CACHELINE_SIZE);
-	u32	dma_fifo_pc;
-	u32	bf_offset;
+	u32	dma_fifo_pc __aligned(MLX5E_CACHELINE_SIZE);
+	u16	pc;
+	u16	bf_offset;
 	struct mlx5e_sq_stats stats;
 
 	struct mlx5e_cq cq;
@@ -379,6 +380,7 @@ struct mlx5e_sq {
 	struct mlx5_wq_cyc wq;
 	u32	dma_fifo_mask;
 	void __iomem *uar_map;
+	void __iomem *uar_bf_map;
 	u32	sqn;
 	u32	bf_buf_size;
 	struct device *pdev;
@@ -415,14 +417,18 @@ struct mlx5e_channel {
 };
 
 enum mlx5e_traffic_types {
-	MLX5E_TT_IPV4_TCP = 0,
-	MLX5E_TT_IPV6_TCP = 1,
-	MLX5E_TT_IPV4_UDP = 2,
-	MLX5E_TT_IPV6_UDP = 3,
-	MLX5E_TT_IPV4 = 4,
-	MLX5E_TT_IPV6 = 5,
-	MLX5E_TT_ANY = 6,
-	MLX5E_NUM_TT = 7,
+	MLX5E_TT_IPV4_TCP,
+	MLX5E_TT_IPV6_TCP,
+	MLX5E_TT_IPV4_UDP,
+	MLX5E_TT_IPV6_UDP,
+	MLX5E_TT_IPV4_IPSEC_AH,
+	MLX5E_TT_IPV6_IPSEC_AH,
+	MLX5E_TT_IPV4_IPSEC_ESP,
+	MLX5E_TT_IPV6_IPSEC_ESP,
+	MLX5E_TT_IPV4,
+	MLX5E_TT_IPV6,
+	MLX5E_TT_ANY,
+	MLX5E_NUM_TT,
 };
 
 enum {
@@ -590,22 +596,30 @@ void	mlx5e_del_all_vlan_rules(struct mlx5e_priv *priv);
 
 static inline void
 mlx5e_tx_notify_hw(struct mlx5e_sq *sq,
-    struct mlx5e_tx_wqe *wqe)
+    struct mlx5e_tx_wqe *wqe, int bf_sz)
 {
+	u16 ofst = MLX5_BF_OFFSET + sq->bf_offset;
+
 	/* ensure wqe is visible to device before updating doorbell record */
 	wmb();
 
 	*sq->wq.db = cpu_to_be32(sq->pc);
 
 	/*
-	 * ensure doorbell record is visible to device before ringing the
-	 * doorbell
+	 * Ensure the doorbell record is visible to device before ringing
+	 * the doorbell:
 	 */
 	wmb();
 
-	mlx5_write64((__be32 *) & wqe->ctrl,
-	    sq->uar_map + MLX5_BF_OFFSET + sq->bf_offset,
-	    NULL);
+	if (bf_sz) {
+		__iowrite64_copy(sq->uar_bf_map + ofst, &wqe->ctrl, bf_sz);
+
+		/* flush the write-combining mapped buffer */
+		wmb();
+
+	} else {
+		mlx5_write64((__be32 *)&wqe->ctrl, sq->uar_map + ofst, NULL);
+	}
 
 	sq->bf_offset ^= sq->bf_buf_size;
 }
