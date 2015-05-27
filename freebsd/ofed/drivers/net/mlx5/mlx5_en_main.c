@@ -442,6 +442,8 @@ mlx5e_update_stats(unsigned long data)
 	struct mlx5e_priv *priv = (struct mlx5e_priv *)data;
 
 	schedule_work(&priv->update_stats_work);
+
+	mod_timer(&priv->watchdog, jiffies + HZ);
 }
 
 static void
