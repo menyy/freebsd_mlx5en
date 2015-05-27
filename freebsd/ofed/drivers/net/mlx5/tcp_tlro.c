@@ -272,7 +272,7 @@ tcp_tlro_extract_header(struct tlro_mbuf_data *pinfo, struct mbuf *m, int seq)
 		if (M_HASHTYPE_GET(m) == M_HASHTYPE_LRO_TCP)
 			pinfo->ip_len = m->m_pkthdr.len - off;
 		else
-			pinfo->ip_len = ntohs(ip6->ip6_plen);
+			pinfo->ip_len = ntohs(ip6->ip6_plen) + sizeof(*ip6);
 		pinfo->ip_hdrlen = sizeof(*ip6);
 		pinfo->ip.v6 = ip6;
 		pinfo->ip_version = 6;
@@ -543,17 +543,21 @@ tcp_tlro_combine(struct tlro_ctrl *tlro, int force)
 		pinfoa->tcp->th_sum = ~htole16(cs);
 
 		/* update IP length, if any */
-		if (pinfoa->ip_len > IP_MAXPACKET) {
-			M_HASHTYPE_SET(pinfoa->head, M_HASHTYPE_LRO_TCP);
-			if (pinfoa->ip_version == 4)
+		if (pinfoa->ip_version == 4) {
+			if (pinfoa->ip_len > IP_MAXPACKET) {
+				M_HASHTYPE_SET(pinfoa->head, M_HASHTYPE_LRO_TCP);
 				pinfoa->ip.v4->ip_len = htons(IP_MAXPACKET);
-			else
-				pinfoa->ip.v6->ip6_plen = htons(IP_MAXPACKET);
-		} else {
-			if (pinfoa->ip_version == 4)
+			} else {
 				pinfoa->ip.v4->ip_len = htons(pinfoa->ip_len);
-			else
-				pinfoa->ip.v6->ip6_plen = htons(pinfoa->ip_len);
+			}
+		} else {
+			if (pinfoa->ip_len > (IP_MAXPACKET + sizeof(*pinfoa->ip.v6))) {
+				M_HASHTYPE_SET(pinfoa->head, M_HASHTYPE_LRO_TCP);
+				pinfoa->ip.v6->ip6_plen = htons(IP_MAXPACKET);
+			} else {
+				temp = pinfoa->ip_len - sizeof(*pinfoa->ip.v6);
+				pinfoa->ip.v6->ip6_plen = htons(temp);
+			}
 		}
 
 		temp = curr_ticks - pinfoa->last_tick;
