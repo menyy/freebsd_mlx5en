@@ -83,22 +83,20 @@ static int tlro_max_packet = IP_MAXPACKET;
 SYSCTL_INT(_net_inet_tcp_tlro, OID_AUTO, max_packet, CTLFLAG_RWTUN,
     &tlro_max_packet, 0, "Maximum packet size in bytes");
 
-static uint16_t
-tcp_tlro_csum(const uint8_t *p, size_t l)
-{
-	const uint8_t *pend = p + (l & ~3);
-	uint32_t cs = 0;
+typedef struct {
+	uint32_t value;
+} __packed uint32_p_t;
 
-	while (p != pend) {
-		cs += p[0];
-		cs += p[1] << 8;
-		cs += p[2];
-		cs += p[3] << 8;
-		p += 4;
-	}
+static uint16_t
+tcp_tlro_csum(const uint32_p_t *p, size_t l)
+{
+	const uint32_p_t *pend = p + (l / 4);
+	uint64_t cs;
+
+	for (cs = 0; p != pend; p++)
+		cs += le32toh(p->value);
 	while (cs > 0xffff)
 		cs = (cs >> 16) + (cs & 0xffff);
-
 	return (cs);
 }
 
@@ -216,7 +214,7 @@ tcp_tlro_extract_header(struct tlro_mbuf_data *pinfo, struct mbuf *m, int seq)
 		/* Legacy IP has a header checksum that needs to be correct */
 		if (!(m->m_pkthdr.csum_flags & CSUM_IP_CHECKED)) {
 			/* Verify IP header */
-			if (tcp_tlro_csum((uint8_t *)ip, sizeof(*ip)) != 0xFFFF)
+			if (tcp_tlro_csum((uint32_p_t *)ip, sizeof(*ip)) != 0xFFFF)
 				m->m_pkthdr.csum_flags |= CSUM_IP_CHECKED;
 			else
 				m->m_pkthdr.csum_flags |= CSUM_IP_CHECKED |
@@ -307,32 +305,37 @@ tcp_tlro_extract_header(struct tlro_mbuf_data *pinfo, struct mbuf *m, int seq)
 		else
 			m_adj(m, -diff);
 	}
-repeat:
 	pinfo->buf_length = phdr - (uint8_t *)pinfo->buf;
-	if (pinfo->buf_length & 3) {
-		/* pad to 32-bits */
+	/* pad to 64-bits */
+	while (pinfo->buf_length & 7) {
 		*phdr++ = 0;
-		goto repeat;
+		pinfo->buf_length++;
 	}
-	pinfo->buf_length /= 4;
+	/* convert to 64-bit integers */
+	pinfo->buf_length /= 8;
 	return;
 error:
 	pinfo->buf_length = 0;
 }
 
-static int32_t
-tcp_tlro_cmp32(const uint32_t *pa, const uint32_t *pb, uint32_t num)
+static int
+tcp_tlro_cmp64(const uint64_t *pa, const uint64_t *pb, uint64_t num)
 {
-	int32_t diff;
+	const uint64_t *pa_end = pa + num;
+	int64_t diff;
 
-	while (num--) {
+	while (pa != pa_end) {
 		/*
 		 * NOTE: Endianness does not matter in this
 		 * comparisation:
 		 */
 		diff = (*pa++) - (*pb++);
-		if (diff != 0)
-			return (diff);
+		if (diff != 0) {
+			if (diff < 0)
+				return (-1);
+			else
+				return (1);
+		}
 	}
 	return (0);
 }
@@ -354,7 +357,7 @@ tcp_tlro_compare_header(const void *_ppa, const void *_ppb)
 	if (ret != 0)
 		goto done;
 	if (pinfoa->buf_length != 0) {
-		ret = tcp_tlro_cmp32(pinfoa->buf, pinfob->buf, pinfoa->buf_length);
+		ret = tcp_tlro_cmp64(pinfoa->buf, pinfob->buf, pinfoa->buf_length);
 		if (ret != 0)
 			goto done;
 		ret = ntohl(pinfoa->tcp->th_seq) - ntohl(pinfob->tcp->th_seq);
@@ -417,7 +420,7 @@ tcp_tlro_combine(struct tlro_ctrl *tlro, int force)
 		for (x = y + 1; x != tlro->curr; x++) {
 			pinfob = tlro->mbuf[x].data;
 			if (pinfoa->buf_length != pinfob->buf_length ||
-			    tcp_tlro_cmp32(pinfoa->buf, pinfob->buf, pinfoa->buf_length) != 0)
+			    tcp_tlro_cmp64(pinfoa->buf, pinfob->buf, pinfoa->buf_length) != 0)
 				break;
 		}
 		if (pinfoa->buf_length == 0) {
@@ -442,7 +445,7 @@ tcp_tlro_combine(struct tlro_ctrl *tlro, int force)
 		/* compute current checksum subtracted some header parts */
 		temp = (pinfoa->ip_len - pinfoa->ip_hdrlen);
 		cs = ((temp & 0xFF) << 8) + ((temp & 0xFF00) >> 8) +
-		    tcp_tlro_csum((uint8_t *)pinfoa->tcp, pinfoa->tcp_len);
+		    tcp_tlro_csum((uint32_p_t *)pinfoa->tcp, pinfoa->tcp_len);
 
 		/* append all fragments into one block */
 		for (z = y + 1; z != x; z++) {
@@ -465,15 +468,15 @@ tcp_tlro_combine(struct tlro_ctrl *tlro, int force)
 
 			temp = pinfob->ip_len - pinfob->ip_hdrlen;
 			cs += ((temp & 0xFF) << 8) + ((temp & 0xFF00) >> 8) +
-			    tcp_tlro_csum((uint8_t *)pinfob->tcp, pinfob->tcp_len);
+			    tcp_tlro_csum((uint32_p_t *)pinfob->tcp, pinfob->tcp_len);
 			/* remove fields which appear twice */
 			cs += (IPPROTO_TCP << 8);
 			if (pinfob->ip_version == 4) {
-				cs += tcp_tlro_csum((uint8_t *)&pinfob->ip.v4->ip_src, 4);
-				cs += tcp_tlro_csum((uint8_t *)&pinfob->ip.v4->ip_dst, 4);
+				cs += tcp_tlro_csum((uint32_p_t *)&pinfob->ip.v4->ip_src, 4);
+				cs += tcp_tlro_csum((uint32_p_t *)&pinfob->ip.v4->ip_dst, 4);
 			} else {
-				cs += tcp_tlro_csum((uint8_t *)&pinfob->ip.v6->ip6_src, 16);
-				cs += tcp_tlro_csum((uint8_t *)&pinfob->ip.v6->ip6_dst, 16);
+				cs += tcp_tlro_csum((uint32_p_t *)&pinfob->ip.v6->ip6_src, 16);
+				cs += tcp_tlro_csum((uint32_p_t *)&pinfob->ip.v6->ip6_dst, 16);
 			}
 			/* remainder computation */
 			while (cs > 0xffff)
@@ -518,7 +521,7 @@ tcp_tlro_combine(struct tlro_ctrl *tlro, int force)
 
 		temp = pinfoa->ip_len - pinfoa->ip_hdrlen;
 		cs = (cs ^ 0xFFFF) +
-		    tcp_tlro_csum((uint8_t *)pinfoa->tcp, pinfoa->tcp_len) +
+		    tcp_tlro_csum((uint32_p_t *)pinfoa->tcp, pinfoa->tcp_len) +
 		    ((temp & 0xFF) << 8) + ((temp & 0xFF00) >> 8);
 
 		/* remainder computation */
@@ -554,7 +557,7 @@ tcp_tlro_combine(struct tlro_ctrl *tlro, int force)
 			/* compute new IPv4 header checksum */
 			if (pinfoa->ip_version == 4) {
 				pinfoa->ip.v4->ip_sum = 0;
-				cs = tcp_tlro_csum((uint8_t *)pinfoa->ip.v4,
+				cs = tcp_tlro_csum((uint32_p_t *)pinfoa->ip.v4,
 				    sizeof(*pinfoa->ip.v4));
 				pinfoa->ip.v4->ip_sum = ~htole16(cs);
 			}
