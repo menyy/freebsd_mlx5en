@@ -37,13 +37,12 @@ mlx5e_send_nop(struct mlx5e_sq *sq, bool notify_hw)
 {
 	u16 pi = sq->pc & sq->wq.sz_m1;
 	struct mlx5e_tx_wqe *wqe = mlx5_wq_cyc_get_wqe(&sq->wq, pi);
-	struct mlx5_wqe_ctrl_seg *cseg = &wqe->ctrl;
 
-	memset(cseg, 0, sizeof(*cseg));
+	memset(&wqe->ctrl, 0, sizeof(wqe->ctrl));
 
-	cseg->opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | MLX5_OPCODE_NOP);
-	cseg->qpn_ds = cpu_to_be32((sq->sqn << 8) | 0x01);
-	cseg->fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
+	wqe->ctrl.opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | MLX5_OPCODE_NOP);
+	wqe->ctrl.qpn_ds = cpu_to_be32((sq->sqn << 8) | 0x01);
+	wqe->ctrl.fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
 
 	sq->mbuf[pi] = NULL;
 	sq->pc++;
