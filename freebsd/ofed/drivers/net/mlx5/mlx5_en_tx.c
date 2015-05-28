@@ -232,12 +232,9 @@ static int
 mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 {
 	struct mlx5_wqe_data_seg *dseg;
-	struct mlx5_wqe_ctrl_seg *cseg;
-	struct mlx5_wqe_eth_seg *eseg;
 	struct net_device *netdev;
 	struct mlx5e_tx_wqe *wqe;
 	struct mbuf *mx;
-	dma_addr_t dma_addr = 0;
 	u16 ds_cnt;
 	u16 ihs;
 	u16 pi;
@@ -257,8 +254,6 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 	/* setup local variables */
 	pi = sq->pc & sq->wq.sz_m1;
 	wqe = mlx5_wq_cyc_get_wqe(&sq->wq, pi);
-	cseg = &wqe->ctrl;
-	eseg = &wqe->eth;
 	netdev = sq->channel->netdev;
 
 	memset(wqe, 0, sizeof(*wqe));
@@ -284,7 +279,7 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 
 	if (mb->m_pkthdr.csum_flags & (CSUM_IP | CSUM_TSO |
 	    CSUM_TCP | CSUM_UDP | CSUM_TCP_IPV6 | CSUM_UDP_IPV6)) {
-		eseg->cs_flags = MLX5_ETH_WQE_L3_CSUM | MLX5_ETH_WQE_L4_CSUM;
+		wqe->eth.cs_flags = MLX5_ETH_WQE_L3_CSUM | MLX5_ETH_WQE_L4_CSUM;
 	} else {
 		sq->stats.csum_offload_none++;
 	}
@@ -294,7 +289,7 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 		u32 mss = mb->m_pkthdr.tso_segsz;
 		u32 num_pkts;
 
-		eseg->mss = cpu_to_be16(mss);
+		wqe->eth.mss = cpu_to_be16(mss);
 		opcode = MLX5_OPCODE_LSO;
 		ihs = mlx5e_get_header_size(mb);
 		payload_len = mb->m_pkthdr.len - ihs;
@@ -311,27 +306,28 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 		opcode = MLX5_OPCODE_SEND;
 		ihs = mlx5e_get_inline_hdr_size(sq, mb);
 		MLX5E_TX_MBUF_CB(mb)->num_bytes =
-		    max_t (unsigned int, mb->m_pkthdr.len, ETHER_MIN_LEN - ETHER_CRC_LEN);
+		    max_t (unsigned int, mb->m_pkthdr.len,
+		    ETHER_MIN_LEN - ETHER_CRC_LEN);
 	}
 	if (mb->m_flags & M_VLANTAG) {
-		mlx5e_insert_vlan(eseg->inline_hdr_start, mb, ihs);
+		mlx5e_insert_vlan(wqe->eth.inline_hdr_start, mb, ihs);
 	} else {
-		m_copydata(mb, 0, ihs, eseg->inline_hdr_start);
+		m_copydata(mb, 0, ihs, wqe->eth.inline_hdr_start);
 		m_adj(mb, ihs);
 	}
 
-	eseg->inline_hdr_sz = cpu_to_be16(ihs);
+	wqe->eth.inline_hdr_sz = cpu_to_be16(ihs);
 
 	ds_cnt = sizeof(*wqe) / MLX5_SEND_WQE_DS;
-	if (likely(ihs > sizeof(eseg->inline_hdr_start))) {
-		ds_cnt += DIV_ROUND_UP(ihs - sizeof(eseg->inline_hdr_start),
+	if (likely(ihs > sizeof(wqe->eth.inline_hdr_start))) {
+		ds_cnt += DIV_ROUND_UP(ihs - sizeof(wqe->eth.inline_hdr_start),
 		    MLX5_SEND_WQE_DS);
 	}
-	dseg = (struct mlx5_wqe_data_seg *)cseg + ds_cnt;
-
-	MLX5E_TX_MBUF_CB(mb)->num_dma = 0;
+	dseg = ((struct mlx5_wqe_data_seg *)&wqe->ctrl) + ds_cnt;
 
 	for (mx = mb; mx != NULL; mx = mx->m_next) {
+		dma_addr_t dma_addr;
+
 		if (mx->m_len == 0)
 			continue;
 
@@ -345,16 +341,16 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 		dseg->byte_count = cpu_to_be32(mx->m_len);
 
 		mlx5e_dma_push(sq, dma_addr, mx->m_len);
-		MLX5E_TX_MBUF_CB(mb)->num_dma++;
-
 		dseg++;
 	}
 
+	MLX5E_TX_MBUF_CB(mb)->num_dma =
+	    (dseg - ((struct mlx5_wqe_data_seg *)&wqe->ctrl)) - ds_cnt;
 	ds_cnt += MLX5E_TX_MBUF_CB(mb)->num_dma;
 
-	cseg->opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | opcode);
-	cseg->qpn_ds = cpu_to_be32((sq->sqn << 8) | ds_cnt);
-	cseg->fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
+	wqe->ctrl.opmod_idx_opcode = cpu_to_be32((sq->pc << 8) | opcode);
+	wqe->ctrl.qpn_ds = cpu_to_be32((sq->sqn << 8) | ds_cnt);
+	wqe->ctrl.fm_ce_se = MLX5_WQE_CTRL_CQ_UPDATE;
 
 	sq->mbuf[pi] = mb;
 
