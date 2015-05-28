@@ -414,7 +414,7 @@ struct mlx5e_channel {
 	struct mlx5e_priv *priv;
 	int	ix;
 	int	cpu;
-};
+} __aligned(MLX5E_CACHELINE_SIZE);
 
 enum mlx5e_traffic_types {
 	MLX5E_TT_IPV4_TCP,
