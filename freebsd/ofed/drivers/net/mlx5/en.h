@@ -68,10 +68,6 @@
 #define	netdev_err(dev, ...) \
 	if_printf(dev, __VA_ARGS__)
 
-#define	MLX5E_MAX_MBUF_FRAGS	16	/* XXX tune this */
-
-#define	MLX5E_MAX_NUM_TC	8
-
 #define	MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE                0x7
 #define	MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE                0xa
 #define	MLX5E_PARAMS_MAXIMUM_LOG_SQ_SIZE                0xd
@@ -93,6 +89,15 @@
 
 #define	MLX5E_BUDGET_MAX	8192	/* RX and TX */
 #define	MLX5E_SQ_BF_BUDGET	16
+
+#define	MLX5E_MAX_TX_NUM_TC	8	/* units */
+#define	MLX5E_MAX_TX_HEADER	128	/* bytes */
+#define	MLX5E_MAX_TX_MBUF_FRAGS	\
+    ((MLX5_SEND_WQE_MAX_WQEBBS * MLX5_SEND_WQEBB_NUM_DS) - \
+    (MLX5E_MAX_TX_HEADER / MLX5_SEND_WQE_DS))	/* units */
+#define	MLX5E_MAX_TX_INLINE \
+  (MLX5E_MAX_TX_HEADER - sizeof(struct mlx5e_tx_wqe) + \
+  sizeof(((struct mlx5e_tx_wqe *)0)->eth.inline_hdr_start))	/* bytes */
 
 struct mlx5_core_dev;
 struct mlx5e_cq;
@@ -404,7 +409,7 @@ mlx5e_sq_has_room_for(struct mlx5e_sq *sq, u16 n)
 struct mlx5e_channel {
 	/* data path */
 	struct mlx5e_rq rq;
-	struct mlx5e_sq sq[MLX5E_MAX_NUM_TC];
+	struct mlx5e_sq sq[MLX5E_MAX_TX_NUM_TC];
 	struct device *pdev;
 	struct net_device *netdev;
 	u32	mkey_be;
@@ -495,7 +500,7 @@ struct mlx5e_priv {
 	struct mlx5_core_mr mr;
 
 	struct mlx5e_channel * volatile *channel;
-	u32	tisn[MLX5E_MAX_NUM_TC];
+	u32	tisn[MLX5E_MAX_TX_NUM_TC];
 	u32	rqtn;
 	u32	tirn[MLX5E_NUM_TT];
 

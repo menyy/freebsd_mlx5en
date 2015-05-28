@@ -2120,7 +2120,7 @@ mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 
 	/* set TSO limits so that we don't have to drop TX packets */
 	netdev->if_hw_tsomax = 65536 - (ETHER_HDR_LEN + ETHER_VLAN_ENCAP_LEN);
-	netdev->if_hw_tsomaxsegcount = MLX5E_MAX_MBUF_FRAGS;
+	netdev->if_hw_tsomaxsegcount = MLX5E_MAX_TX_MBUF_FRAGS - 1 /* hdr */;
 	netdev->if_hw_tsomaxsegsize = 65536;	/* XXX can do up to 4GByte */
 
 	netdev->if_capenable = netdev->if_capabilities;
