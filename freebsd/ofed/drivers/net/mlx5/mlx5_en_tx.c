@@ -139,20 +139,7 @@ mlx5e_select_queue(struct net_device *dev, struct mbuf *mb)
 static inline u16
 mlx5e_get_inline_hdr_size(struct mlx5e_sq *sq, struct mbuf *mb)
 {
-	int retval;
-
-/* Length of ethernet header with vlan (w/o next ethertype) */
-#define	MLX5E_MIN_INLINE (16 + 2)
-#define	MLX5E_MAX_INLINE (128 - sizeof(struct mlx5e_tx_wqe) + \
-			  2/*sizeof(eseg->inline_hdr_start)*/)
-
-	/* inline improves latency but hurts message rate */
-	if (sq->cc != sq->pc)
-		retval = MLX5E_MIN_INLINE;
-	else
-		retval = MLX5E_MAX_INLINE;
-
-	return (MIN(retval, mb->m_pkthdr.len));
+	return (MIN(MLX5E_MAX_TX_INLINE, mb->m_len));
 }
 
 static inline void
@@ -219,12 +206,14 @@ mlx5e_get_header_size(struct mbuf *mb)
 	return (eth_hdr_len);
 }
 
-static	u32
+static u32
 mlx5e_num_frags(struct mbuf *mb)
 {
-	u32 frags;
-
-	for (frags = 1; (mb = mb->m_next) != NULL; frags++);
+	u32 frags = 0;
+	do {
+		if (mb->m_len != 0)
+			frags++;
+	} while ((mb = mb->m_next) != NULL);
 	return (frags);
 }
 
@@ -262,13 +251,19 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 	 * Check that the number of fragments in the chain doesn't
 	 * exceed the maximum:
 	 */
-	if (mlx5e_num_frags(mb) > MLX5E_MAX_MBUF_FRAGS) {
+	if (mlx5e_num_frags(mb) > MLX5E_MAX_TX_MBUF_FRAGS) {
 		mx = m_defrag(mb, M_NOWAIT);
 		if (mx == NULL) {
 			sq->stats.dropped++;
 			m_freem(mb);
 			return (ENOMEM);
 		} else {
+			if (mlx5e_num_frags(mx) > MLX5E_MAX_TX_MBUF_FRAGS) {
+				sq->stats.dropped++;
+				m_freem(mx);
+				m_freem(mb);
+				return (ENOMEM);
+			}
 			mb = mx;
 		}
 	}
