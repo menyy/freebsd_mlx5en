@@ -83,20 +83,6 @@ static int tlro_max_packet = IP_MAXPACKET;
 SYSCTL_INT(_net_inet_tcp_tlro, OID_AUTO, max_packet, CTLFLAG_RWTUN,
     &tlro_max_packet, 0, "Maximum packet size in bytes");
 
-static uint32_t
-tcp_tlro_round_up(uint32_t x)
-{
-	uint32_t y;
-	y = (x - 1);
-	if ((x & y) == 0)
-		return (x);
-	do {
-		x &= y;
-		y = (x - 1);
-	} while ((x & y) != 0);
-	return (2 * x);
-}
-
 static uint16_t
 tcp_tlro_csum(const uint8_t *p, size_t l)
 {
@@ -391,8 +377,8 @@ tcp_tlro_sort(struct tlro_ctrl *tlro)
 	if (tlro->curr == 0)
 		return;
 
-	qsort(tlro->mbuf, tcp_tlro_round_up(tlro->curr),
-	    sizeof(struct tlro_mbuf_ptr), &tcp_tlro_compare_header);
+	qsort(tlro->mbuf, tlro->curr, sizeof(struct tlro_mbuf_ptr),
+	    &tcp_tlro_compare_header);
 }
 
 static int
@@ -615,9 +601,7 @@ tcp_tlro_init(struct tlro_ctrl *tlro, struct ifnet *ifp,
 	/* set zero defaults */
 	memset(tlro, 0, sizeof(*tlro));
 
-	/* round up to nearest power of two */
-	max_mbufs = tcp_tlro_round_up(max_mbufs);
-
+	/* compute size needed for data */
 	size = (sizeof(struct tlro_mbuf_ptr) * max_mbufs) +
 	    (sizeof(struct tlro_mbuf_data) * max_mbufs);
 

@@ -57,7 +57,7 @@ struct tlro_mbuf_data {
 	uint8_t	ip_version;
 	uint8_t buf_length;	/* in 32-bit words */
 	uint32_t buf[TLRO_MAX_HEADER / 4];
-} __aligned(sizeof(void *));
+} __aligned(256);
 
 struct tlro_mbuf_ptr {
 	struct tlro_mbuf_data *data;
