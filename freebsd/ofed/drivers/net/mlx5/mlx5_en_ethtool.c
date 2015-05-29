@@ -143,6 +143,7 @@ void
 mlx5e_create_ethtool(struct mlx5e_priv *priv)
 {
 	struct sysctl_oid *node;
+	const char *pnameunit;
 	unsigned x;
 
 	/* set some defaults */
@@ -161,7 +162,7 @@ mlx5e_create_ethtool(struct mlx5e_priv *priv)
 	/* create root node */
 	node = SYSCTL_ADD_NODE(&priv->sysctl_ctx,
 	    SYSCTL_CHILDREN(priv->sysctl), OID_AUTO,
-	    "ethtool", CTLFLAG_RW, NULL, "Ethernet tools");
+	    "conf", CTLFLAG_RW, NULL, "Configuration");
 	if (node == NULL)
 		return;
 	for (x = 0; x != MLX5E_PARAMS_NUM; x++) {
@@ -178,6 +179,13 @@ mlx5e_create_ethtool(struct mlx5e_priv *priv)
 			    mlx5e_params_desc[2 * x + 1]);
 		}
 	}
+
+	pnameunit = device_get_nameunit(priv->mdev->pdev->dev.bsddev);
+
+	SYSCTL_ADD_STRING(&priv->sysctl_ctx, SYSCTL_CHILDREN(node),
+	    OID_AUTO, "device_name", CTLFLAG_RD,
+	    __DECONST(void *, pnameunit), 0,
+	    "PCI device name");
 }
 
 void
