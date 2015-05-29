@@ -573,6 +573,23 @@ tcp_tlro_combine(struct tlro_ctrl *tlro, int force)
 		}
 		y = z;
 	}
+
+	/* cleanup all NULL heads */
+	for (y = 0; y != tlro->curr; y++) {
+		if (tlro->mbuf[y].data->head == NULL) {
+			for (z = y + 1; z != tlro->curr; z++) {
+				struct tlro_mbuf_ptr ptemp;
+				if (tlro->mbuf[z].data->head == NULL)
+					continue;
+				ptemp = tlro->mbuf[y];
+				tlro->mbuf[y] = tlro->mbuf[z];
+				tlro->mbuf[z] = ptemp;
+				y++;
+			}
+			break;
+		}
+	}
+	tlro->curr = y;
 }
 
 static void
