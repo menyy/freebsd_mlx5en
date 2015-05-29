@@ -46,18 +46,14 @@ mlx5e_alloc_rx_wqe(struct mlx5e_rq *rq,
 	/* set initial mbuf length */
 	mb->m_pkthdr.len = mb->m_len = rq->wqe_sz;
 
-	/* get IP header aligned */
-	m_adj(mb, MLX5E_NET_IP_ALIGN);
-
 	dma_addr = dma_map_single(rq->pdev,
-	/* hw start padding */
-	    mb->m_data - MLX5E_NET_IP_ALIGN,
-	/* hw   end padding */
-	    mb->m_len + MLX5E_NET_IP_ALIGN,
-	    DMA_FROM_DEVICE);
+	    mb->m_data, mb->m_len, DMA_FROM_DEVICE);
 
 	if (unlikely(dma_mapping_error(rq->pdev, dma_addr)))
 		goto err_free_mbuf;
+
+	/* get IP header aligned */
+	m_adj(mb, MLX5E_NET_IP_ALIGN);
 
 	MLX5E_RX_MBUF_DMA_ADDR(mb) = dma_addr;
 	wqe->data.addr = cpu_to_be64(dma_addr + MLX5E_NET_IP_ALIGN);
@@ -74,30 +70,27 @@ err_free_mbuf:
 static void
 mlx5e_post_rx_wqes(struct mlx5e_rq *rq)
 {
-	struct mlx5_wq_ll *wq = &rq->wq;
-
 	if (unlikely(rq->enabled == 0))
 		return;
 
-	while (!mlx5_wq_ll_is_full(wq)) {
-		struct mlx5e_rx_wqe *wqe = mlx5_wq_ll_get_wqe(wq, wq->head);
+	while (!mlx5_wq_ll_is_full(&rq->wq)) {
+		struct mlx5e_rx_wqe *wqe = mlx5_wq_ll_get_wqe(&rq->wq, rq->wq.head);
 
-		if (unlikely(mlx5e_alloc_rx_wqe(rq, wqe, wq->head)))
+		if (unlikely(mlx5e_alloc_rx_wqe(rq, wqe, rq->wq.head)))
 			break;
 
-		mlx5_wq_ll_push(wq, be16_to_cpu(wqe->next.next_wqe_index));
+		mlx5_wq_ll_push(&rq->wq, be16_to_cpu(wqe->next.next_wqe_index));
 	}
 
 	/* ensure wqes are visible to device before updating doorbell record */
 	wmb();
 
-	mlx5_wq_ll_update_db_record(wq);
+	mlx5_wq_ll_update_db_record(&rq->wq);
 }
 
 static inline void
 mlx5e_build_rx_mbuf(struct mlx5_cqe64 *cqe,
-    struct mlx5e_rq *rq,
-    struct mbuf *mb)
+    struct mlx5e_rq *rq, struct mbuf *mb)
 {
 	struct net_device *netdev = rq->netdev;
 	u32 cqe_bcnt = be32_to_cpu(cqe->byte_cnt);

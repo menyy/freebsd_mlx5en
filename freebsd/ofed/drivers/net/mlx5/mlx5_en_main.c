@@ -1990,9 +1990,8 @@ mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
     int num_comp_vectors)
 {
 	/*
-	 * TODO: consider link speed for setting the following: log_sq_size
-	 * log_rq_size cq moderation?
-	 * lro_timeout_period_usecs@mlx5e_build_tir_ctx()
+	 * TODO: Consider link speed for setting "log_sq_size",
+	 * "log_rq_size" and "cq_moderation_xxx":
 	 */
 	priv->params.log_sq_size =
 	    MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE;

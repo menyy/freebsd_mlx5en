@@ -35,14 +35,14 @@
 struct mlx5_cqe64 *
 mlx5e_get_cqe(struct mlx5e_cq *cq)
 {
-	struct mlx5_cqwq *wq = &cq->wq;
-	u32 ci = mlx5_cqwq_get_ci(wq);
-	struct mlx5_cqe64 *cqe = mlx5_cqwq_get_wqe(wq, ci);
+	struct mlx5_cqe64 *cqe;
 
-	if ((cqe->op_own ^ mlx5_cqwq_get_wrap_cnt(wq)) & MLX5_CQE_OWNER_MASK)
+	cqe = mlx5_cqwq_get_wqe(&cq->wq, mlx5_cqwq_get_ci(&cq->wq));
+
+	if ((cqe->op_own ^ mlx5_cqwq_get_wrap_cnt(&cq->wq)) & MLX5_CQE_OWNER_MASK)
 		return (NULL);
 
-	mlx5_cqwq_pop(wq);
+	mlx5_cqwq_pop(&cq->wq);
 
 	/* ensure cqe content is read after cqe ownership bit */
 	rmb();
