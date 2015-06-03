@@ -91,7 +91,7 @@ mlx5e_ethtool_handler(SYSCTL_HANDLER_ARGS)
 
 	/* import RX coal time */
 	if (priv->params_ethtool.rx_coalesce_usecs < 1)
-		priv->params_ethtool.rx_coalesce_usecs = 1;
+		priv->params_ethtool.rx_coalesce_usecs = 0;
 	else if (priv->params_ethtool.rx_coalesce_usecs >
 	    MLX5E_FLD_MAX(cqc, cq_period)) {
 		priv->params_ethtool.rx_coalesce_usecs =
@@ -101,7 +101,7 @@ mlx5e_ethtool_handler(SYSCTL_HANDLER_ARGS)
 
 	/* import RX coal pkts */
 	if (priv->params_ethtool.rx_coalesce_pkts < 1)
-		priv->params_ethtool.rx_coalesce_pkts = 1;
+		priv->params_ethtool.rx_coalesce_pkts = 0;
 	else if (priv->params_ethtool.rx_coalesce_pkts >
 	    MLX5E_FLD_MAX(cqc, cq_max_count)) {
 		priv->params_ethtool.rx_coalesce_pkts =
@@ -111,7 +111,7 @@ mlx5e_ethtool_handler(SYSCTL_HANDLER_ARGS)
 
 	/* import TX coal time */
 	if (priv->params_ethtool.tx_coalesce_usecs < 1)
-		priv->params_ethtool.tx_coalesce_usecs = 1;
+		priv->params_ethtool.tx_coalesce_usecs = 0;
 	else if (priv->params_ethtool.tx_coalesce_usecs >
 	    MLX5E_FLD_MAX(cqc, cq_period)) {
 		priv->params_ethtool.tx_coalesce_usecs =
@@ -121,7 +121,7 @@ mlx5e_ethtool_handler(SYSCTL_HANDLER_ARGS)
 
 	/* import TX coal pkts */
 	if (priv->params_ethtool.tx_coalesce_pkts < 1)
-		priv->params_ethtool.tx_coalesce_pkts = 1;
+		priv->params_ethtool.tx_coalesce_pkts = 0;
 	else if (priv->params_ethtool.tx_coalesce_pkts >
 	    MLX5E_FLD_MAX(cqc, cq_max_count)) {
 		priv->params_ethtool.tx_coalesce_pkts = MLX5E_FLD_MAX(cqc, cq_max_count);
