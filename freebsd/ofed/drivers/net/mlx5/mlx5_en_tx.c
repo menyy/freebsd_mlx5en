@@ -260,7 +260,6 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 			if (mlx5e_num_frags(mx) > MLX5E_MAX_TX_MBUF_FRAGS) {
 				sq->stats.dropped++;
 				m_freem(mx);
-				m_freem(mb);
 				return (ENOMEM);
 			}
 			mb = mx;
