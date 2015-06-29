@@ -1,3 +1,4 @@
 [submodule "drivex"]
 	path = drivex
 	url = ssh://l-gerrit.mtl.labs.mlnx:29418/drivex
+	branch = master
