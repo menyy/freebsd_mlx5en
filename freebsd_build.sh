@@ -2,9 +2,8 @@
 #Uncomment this line to enable TurboLRO
 #LRO="HAVE_TURBO_LRO=YES"
 SRC="$1"
-[ -z "$SRC" ] && (
-SRC="/usr/src"
-)
+[ -z "$SRC" ] && SRC="/usr/src"
+
 echo "The FreeBSD source tree is at $SRC ..."
 bmake -m $SRC/share/mk SYSDIR=$SRC/sys -C freebsd/modules $LRO generate
 bmake -m $SRC/share/mk SYSDIR=$SRC/sys -C freebsd/modules $LRO clean cleandepend
