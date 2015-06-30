@@ -47,7 +47,7 @@ mlx5e_ethtool_handler(SYSCTL_HANDLER_ARGS)
 
 	was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
 	if (was_opened)
-		mlx5e_close_locked(priv->netdev);
+		mlx5e_close_locked(priv->ifp);
 
 	/* import TX queue size */
 	if (priv->params_ethtool.tx_queue_size <
@@ -129,7 +129,7 @@ mlx5e_ethtool_handler(SYSCTL_HANDLER_ARGS)
 	priv->params.tx_cq_moderation_pkts = priv->params_ethtool.tx_coalesce_pkts;
 
 	if (was_opened)
-		mlx5e_open_locked(priv->netdev);
+		mlx5e_open_locked(priv->ifp);
 done:
 	mutex_unlock(&priv->state_lock);
 	return (error);

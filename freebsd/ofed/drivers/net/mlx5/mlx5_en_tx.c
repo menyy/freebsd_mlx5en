@@ -99,9 +99,9 @@ mlx5e_hash_init(void *arg)
 SYSINIT(mlx5e_hash_init, SI_SUB_KLD, SI_ORDER_SECOND, &mlx5e_hash_init, NULL);
 
 static struct mlx5e_sq *
-mlx5e_select_queue(struct net_device *dev, struct mbuf *mb)
+mlx5e_select_queue(struct ifnet *ifp, struct mbuf *mb)
 {
-	struct mlx5e_priv *priv = netdev_priv(dev);
+	struct mlx5e_priv *priv = ifp->if_softc;
 	u32 ch;
 	u32 tc;
 
@@ -220,7 +220,7 @@ static int
 mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 {
 	struct mlx5_wqe_data_seg *dseg;
-	struct net_device *netdev;
+	struct ifnet *ifp;
 	struct mlx5e_tx_wqe *wqe;
 	struct mbuf *mx;
 	u16 ds_cnt;
@@ -242,7 +242,7 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 	/* setup local variables */
 	pi = sq->pc & sq->wq.sz_m1;
 	wqe = mlx5_wq_cyc_get_wqe(&sq->wq, pi);
-	netdev = sq->channel->netdev;
+	ifp = sq->channel->ifp;
 
 	memset(wqe, 0, sizeof(*wqe));
 
@@ -267,8 +267,8 @@ mlx5e_sq_xmit(struct mlx5e_sq *sq, struct mbuf *mb)
 	}
 
 	/* send a copy of the frame to the BPF listener, if any */
-	if (netdev != NULL && netdev->if_bpf != NULL)
-		ETHER_BPF_MTAP(netdev, mb);
+	if (ifp != NULL && ifp->if_bpf != NULL)
+		ETHER_BPF_MTAP(ifp, mb);
 
 	if (mb->m_pkthdr.csum_flags & (CSUM_IP | CSUM_TSO |
 	    CSUM_TCP | CSUM_UDP | CSUM_TCP_IPV6 | CSUM_UDP_IPV6)) {
@@ -430,12 +430,12 @@ mlx5e_poll_tx_cq(struct mlx5e_sq *sq, int budget)
 }
 
 int
-mlx5e_xmit(struct net_device *dev, struct mbuf *mb)
+mlx5e_xmit(struct ifnet *ifp, struct mbuf *mb)
 {
 	struct mlx5e_sq *sq;
 	int ret;
 
-	sq = mlx5e_select_queue(dev, mb);
+	sq = mlx5e_select_queue(ifp, mb);
 	if (sq == NULL) {
 		/* invalid send queue */
 		m_freem(mb);

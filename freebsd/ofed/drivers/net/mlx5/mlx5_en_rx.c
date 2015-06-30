@@ -92,15 +92,15 @@ static inline void
 mlx5e_build_rx_mbuf(struct mlx5_cqe64 *cqe,
     struct mlx5e_rq *rq, struct mbuf *mb)
 {
-	struct net_device *netdev = rq->netdev;
+	struct ifnet *ifp = rq->ifp;
 	u32 cqe_bcnt = be32_to_cpu(cqe->byte_cnt);
 
 	mb->m_pkthdr.len = mb->m_len = cqe_bcnt;
 	mb->m_pkthdr.flowid = rq->ix;
 	M_HASHTYPE_SET(mb, M_HASHTYPE_OPAQUE);
-	mb->m_pkthdr.rcvif = netdev;
+	mb->m_pkthdr.rcvif = ifp;
 
-	if (likely(netdev->if_capabilities & IFCAP_RXCSUM) &&
+	if (likely(ifp->if_capabilities & IFCAP_RXCSUM) &&
 	    ((cqe->hds_ip_ext & (CQE_L2_OK | CQE_L3_OK | CQE_L4_OK)) ==
 	    (CQE_L2_OK | CQE_L3_OK | CQE_L4_OK))) {
 		mb->m_pkthdr.csum_flags =
@@ -156,19 +156,19 @@ mlx5e_poll_rx_cq(struct mlx5e_rq *rq, int budget)
 		rq->stats.packets++;
 #ifdef HAVE_TURBO_LRO
 		if (mb->m_pkthdr.csum_flags == 0 ||
-		    (rq->netdev->if_capenable & IFCAP_LRO) == 0 ||
+		    (rq->ifp->if_capenable & IFCAP_LRO) == 0 ||
 		    rq->lro.mbuf == NULL) {
 			/* normal input */
-			rq->netdev->if_input(rq->netdev, mb);
+			rq->ifp->if_input(rq->ifp, mb);
 		} else {
 			tcp_tlro_rx(&rq->lro, mb);
 		}
 #else
 		if (mb->m_pkthdr.csum_flags == 0 ||
-		    (rq->netdev->if_capenable & IFCAP_LRO) == 0 ||
+		    (rq->ifp->if_capenable & IFCAP_LRO) == 0 ||
 		    rq->lro.lro_cnt == 0 ||
 		    tcp_lro_rx(&rq->lro, mb, 0) != 0) {
-			rq->netdev->if_input(rq->netdev, mb);
+			rq->ifp->if_input(rq->ifp, mb);
 		}
 #endif
 wq_ll_pop:

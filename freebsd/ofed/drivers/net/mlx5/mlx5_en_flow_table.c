@@ -381,7 +381,7 @@ mlx5e_add_eth_addr_rule(struct mlx5e_priv *priv,
 	    MLX5_ST_SZ_BYTES(dest_format_struct));
 	match_criteria = mlx5_vzalloc(MLX5_ST_SZ_BYTES(fte_match_param));
 	if (!flow_context || !match_criteria) {
-		netdev_err(priv->netdev, "%s: alloc failed\n", __func__);
+		if_printf(priv->ifp, "%s: alloc failed\n", __func__);
 		err = -ENOMEM;
 		goto add_eth_addr_rule_out;
 	}
@@ -389,7 +389,7 @@ mlx5e_add_eth_addr_rule(struct mlx5e_priv *priv,
 	err = mlx5e_add_eth_addr_rule_sub(priv, ai, type, flow_context,
 	    match_criteria);
 	if (err)
-		netdev_err(priv->netdev, "%s: failed\n", __func__);
+		if_printf(priv->ifp, "%s: failed\n", __func__);
 
 add_eth_addr_rule_out:
 	kvfree(match_criteria);
@@ -419,7 +419,7 @@ mlx5e_add_vlan_rule(struct mlx5e_priv *priv,
 	    MLX5_ST_SZ_BYTES(dest_format_struct));
 	match_criteria = mlx5_vzalloc(MLX5_ST_SZ_BYTES(fte_match_param));
 	if (!flow_context || !match_criteria) {
-		netdev_err(priv->netdev, "%s: alloc failed\n", __func__);
+		if_printf(priv->ifp, "%s: alloc failed\n", __func__);
 		err = -ENOMEM;
 		goto add_vlan_rule_out;
 	}
@@ -461,7 +461,7 @@ mlx5e_add_vlan_rule(struct mlx5e_priv *priv,
 	err = mlx5_add_flow_table_entry(priv->ft.vlan, match_criteria_enable,
 	    match_criteria, flow_context, ft_ix);
 	if (err)
-		netdev_err(priv->netdev, "%s: failed\n", __func__);
+		if_printf(priv->ifp, "%s: failed\n", __func__);
 
 add_vlan_rule_out:
 	kvfree(match_criteria);
@@ -516,9 +516,9 @@ mlx5e_disable_vlan_filter(struct mlx5e_priv *priv)
 }
 
 void
-mlx5e_vlan_rx_add_vid(void *arg, struct net_device *dev, u16 vid)
+mlx5e_vlan_rx_add_vid(void *arg, struct ifnet *ifp, u16 vid)
 {
-	struct mlx5e_priv *priv = netdev_priv(dev);
+	struct mlx5e_priv *priv = ifp->if_softc;
 
 	mutex_lock(&priv->state_lock);
 	set_bit(vid, priv->vlan.active_vlans);
@@ -528,9 +528,9 @@ mlx5e_vlan_rx_add_vid(void *arg, struct net_device *dev, u16 vid)
 }
 
 void
-mlx5e_vlan_rx_kill_vid(void *arg, struct net_device *dev, u16 vid)
+mlx5e_vlan_rx_kill_vid(void *arg, struct ifnet *ifp, u16 vid)
 {
-	struct mlx5e_priv *priv = netdev_priv(dev);
+	struct mlx5e_priv *priv = ifp->if_softc;
 
 	mutex_lock(&priv->state_lock);
 	clear_bit(vid, priv->vlan.active_vlans);
@@ -604,72 +604,72 @@ mlx5e_execute_action(struct mlx5e_priv *priv,
 }
 
 static void
-mlx5e_sync_netdev_addr(struct mlx5e_priv *priv)
+mlx5e_sync_ifp_addr(struct mlx5e_priv *priv)
 {
-	struct net_device *netdev = priv->netdev;
+	struct ifnet *ifp = priv->ifp;
 	struct ifaddr *ifa;
 	struct ifmultiaddr *ifma;
 
 	/* XXX adding this entry might not be needed */
-	mlx5e_add_eth_addr_to_hash(priv->eth_addr.netdev_uc,
-	    LLADDR((struct sockaddr_dl *)(netdev->if_addr->ifa_addr)));
+	mlx5e_add_eth_addr_to_hash(priv->eth_addr.if_uc,
+	    LLADDR((struct sockaddr_dl *)(ifp->if_addr->ifa_addr)));
 
-	if_addr_rlock(netdev);
-	TAILQ_FOREACH(ifa, &netdev->if_addrhead, ifa_link) {
+	if_addr_rlock(ifp);
+	TAILQ_FOREACH(ifa, &ifp->if_addrhead, ifa_link) {
 		if (ifa->ifa_addr->sa_family != AF_LINK)
 			continue;
-		mlx5e_add_eth_addr_to_hash(priv->eth_addr.netdev_uc,
+		mlx5e_add_eth_addr_to_hash(priv->eth_addr.if_uc,
 		    LLADDR((struct sockaddr_dl *)ifa->ifa_addr));
 	}
-	if_addr_runlock(netdev);
+	if_addr_runlock(ifp);
 
-	if_maddr_rlock(netdev);
-	TAILQ_FOREACH(ifma, &netdev->if_multiaddrs, ifma_link) {
+	if_maddr_rlock(ifp);
+	TAILQ_FOREACH(ifma, &ifp->if_multiaddrs, ifma_link) {
 		if (ifma->ifma_addr->sa_family != AF_LINK)
 			continue;
-		mlx5e_add_eth_addr_to_hash(priv->eth_addr.netdev_mc,
+		mlx5e_add_eth_addr_to_hash(priv->eth_addr.if_mc,
 		    LLADDR((struct sockaddr_dl *)ifma->ifma_addr));
 	}
-	if_maddr_runlock(netdev);
+	if_maddr_runlock(ifp);
 }
 
 static void
-mlx5e_apply_netdev_addr(struct mlx5e_priv *priv)
+mlx5e_apply_ifp_addr(struct mlx5e_priv *priv)
 {
 	struct mlx5e_eth_addr_hash_node *hn;
 	struct mlx5e_eth_addr_hash_node *tmp;
 	int i;
 
-	mlx5e_for_each_hash_node(hn, tmp, priv->eth_addr.netdev_uc, i)
+	mlx5e_for_each_hash_node(hn, tmp, priv->eth_addr.if_uc, i)
 	    mlx5e_execute_action(priv, hn);
 
-	mlx5e_for_each_hash_node(hn, tmp, priv->eth_addr.netdev_mc, i)
+	mlx5e_for_each_hash_node(hn, tmp, priv->eth_addr.if_mc, i)
 	    mlx5e_execute_action(priv, hn);
 }
 
 static void
-mlx5e_handle_netdev_addr(struct mlx5e_priv *priv)
+mlx5e_handle_ifp_addr(struct mlx5e_priv *priv)
 {
 	struct mlx5e_eth_addr_hash_node *hn;
 	struct mlx5e_eth_addr_hash_node *tmp;
 	int i;
 
-	mlx5e_for_each_hash_node(hn, tmp, priv->eth_addr.netdev_uc, i)
+	mlx5e_for_each_hash_node(hn, tmp, priv->eth_addr.if_uc, i)
 	    hn->action = MLX5E_ACTION_DEL;
-	mlx5e_for_each_hash_node(hn, tmp, priv->eth_addr.netdev_mc, i)
+	mlx5e_for_each_hash_node(hn, tmp, priv->eth_addr.if_mc, i)
 	    hn->action = MLX5E_ACTION_DEL;
 
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
-		mlx5e_sync_netdev_addr(priv);
+		mlx5e_sync_ifp_addr(priv);
 
-	mlx5e_apply_netdev_addr(priv);
+	mlx5e_apply_ifp_addr(priv);
 }
 
 void
 mlx5e_set_rx_mode_core(struct mlx5e_priv *priv)
 {
 	struct mlx5e_eth_addr_db *ea = &priv->eth_addr;
-	struct net_device *ndev = priv->netdev;
+	struct ifnet *ndev = priv->ifp;
 
 	bool rx_mode_enable = test_bit(MLX5E_STATE_OPENED, &priv->state);
 	bool promisc_enabled = rx_mode_enable && (ndev->if_flags & IFF_PROMISC);
@@ -685,7 +685,7 @@ mlx5e_set_rx_mode_core(struct mlx5e_priv *priv)
 
 	/* update broadcast address */
 	ether_addr_copy(priv->eth_addr.broadcast.addr,
-	    priv->netdev->if_broadcastaddr);
+	    priv->ifp->if_broadcastaddr);
 
 	if (enable_promisc)
 		mlx5e_add_eth_addr_rule(priv, &ea->promisc, MLX5E_PROMISC);
@@ -694,7 +694,7 @@ mlx5e_set_rx_mode_core(struct mlx5e_priv *priv)
 	if (enable_broadcast)
 		mlx5e_add_eth_addr_rule(priv, &ea->broadcast, MLX5E_FULLMATCH);
 
-	mlx5e_handle_netdev_addr(priv);
+	mlx5e_handle_ifp_addr(priv);
 
 	if (disable_broadcast)
 		mlx5e_del_eth_addr_from_flow_table(priv, &ea->broadcast);

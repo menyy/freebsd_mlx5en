@@ -183,19 +183,19 @@ mlx5e_update_carrier(struct mlx5e_priv *priv)
 
 	if (port_state == VPORT_STATE_UP) {
 		priv->media_status_last |= IFM_ACTIVE;
-		if_link_state_change(priv->netdev, LINK_STATE_UP);
+		if_link_state_change(priv->ifp, LINK_STATE_UP);
 	} else {
 		priv->media_status_last &= ~IFM_ACTIVE;
 		priv->media_active_last = IFM_ETHER;
-		if_link_state_change(priv->netdev, LINK_STATE_DOWN);
+		if_link_state_change(priv->ifp, LINK_STATE_DOWN);
 		return;
 	}
 
 	error = mlx5_query_port_ptys(mdev, out, sizeof(out), MLX5_PTYS_EN);
 	if (error) {
 		priv->media_active_last = IFM_ETHER;
-		priv->netdev->if_baudrate = 1;
-		netdev_err(priv->netdev, "%s: query port ptys failed: 0x%x\n",
+		priv->ifp->if_baudrate = 1;
+		if_printf(priv->ifp, "%s: query port ptys failed: 0x%x\n",
 		    __func__, error);
 		return;
 	}
@@ -205,7 +205,7 @@ mlx5e_update_carrier(struct mlx5e_priv *priv)
 		if (mlx5e_mode_table[i].baudrate == 0)
 			continue;
 		if (MLX5E_PROT_MASK(i) & eth_proto_oper) {
-			priv->netdev->if_baudrate =
+			priv->ifp->if_baudrate =
 			    mlx5e_mode_table[i].baudrate;
 			priv->media_active_last =
 			    mlx5e_mode_table[i].subtype | IFM_ETHER |
@@ -512,7 +512,7 @@ mlx5e_create_rq(struct mlx5e_channel *c,
 
 	rq->wq.db = &rq->wq.db[MLX5_RCV_DBR];
 
-	rq->wqe_sz = priv->netdev->if_mtu + MLX5E_MTU_OVERHEAD;
+	rq->wqe_sz = priv->ifp->if_mtu + MLX5E_MTU_OVERHEAD;
 	if (rq->wqe_sz > MJUM16BYTES) {
 		err = -ENOMEM;
 		goto err_rq_wq_destroy;
@@ -542,7 +542,7 @@ mlx5e_create_rq(struct mlx5e_channel *c,
 	}
 
 	rq->pdev = c->pdev;
-	rq->netdev = c->netdev;
+	rq->ifp = c->ifp;
 	rq->channel = c;
 	rq->ix = c->ix;
 
@@ -552,13 +552,13 @@ mlx5e_create_rq(struct mlx5e_channel *c,
 	    rq->stats.arg);
 
 #ifdef HAVE_TURBO_LRO
-	if (tcp_tlro_init(&rq->lro, c->netdev, MLX5E_BUDGET_MAX) != 0)
+	if (tcp_tlro_init(&rq->lro, c->ifp, MLX5E_BUDGET_MAX) != 0)
 		rq->lro.mbuf = NULL;
 #else
 	if (tcp_lro_init(&rq->lro))
 		rq->lro.lro_cnt = 0;
 	else
-		rq->lro.ifp = c->netdev;
+		rq->lro.ifp = c->ifp;
 #endif
 
 	return (0);
@@ -1217,7 +1217,7 @@ mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 	c->ix = ix;
 	c->cpu = 0;
 	c->pdev = &priv->mdev->pdev->dev;
-	c->netdev = priv->netdev;
+	c->ifp = priv->ifp;
 	c->mkey_be = cpu_to_be32(priv->mr.key);
 	c->num_tc = priv->num_tc;
 
@@ -1699,9 +1699,9 @@ mlx5e_close_tirs(struct mlx5e_priv *priv)
 }
 
 static int
-mlx5e_set_dev_port_mtu(struct net_device *netdev, int sw_mtu)
+mlx5e_set_dev_port_mtu(struct ifnet *ifp, int sw_mtu)
 {
-	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct mlx5e_priv *priv = ifp->if_softc;
 	struct mlx5_core_dev *mdev = priv->mdev;
 	int hw_mtu;
 	int err;
@@ -1712,19 +1712,19 @@ mlx5e_set_dev_port_mtu(struct net_device *netdev, int sw_mtu)
 
 	mlx5_query_port_oper_mtu(mdev, &hw_mtu);
 
-	netdev->if_mtu = (hw_mtu - MLX5E_MTU_OVERHEAD);
+	ifp->if_mtu = (hw_mtu - MLX5E_MTU_OVERHEAD);
 
-	if (netdev->if_mtu != sw_mtu) {
-		if_printf(netdev, "Port MTU %d is different than "
-		    "netdev mtu %d\n", sw_mtu, netdev->if_mtu);
+	if (ifp->if_mtu != sw_mtu) {
+		if_printf(ifp, "Port MTU %d is different than "
+		    "ifp mtu %d\n", sw_mtu, ifp->if_mtu);
 	}
 	return (0);
 }
 
 int
-mlx5e_open_locked(struct net_device *netdev)
+mlx5e_open_locked(struct ifnet *ifp)
 {
-	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct mlx5e_priv *priv = ifp->if_softc;
 	int err;
 
 	/* check if already opened */
@@ -1733,37 +1733,37 @@ mlx5e_open_locked(struct net_device *netdev)
 
 	err = mlx5e_open_tises(priv);
 	if (err) {
-		netdev_err(netdev, "%s: mlx5e_open_tises failed, %d\n",
+		if_printf(ifp, "%s: mlx5e_open_tises failed, %d\n",
 		    __func__, err);
 		return (err);
 	}
 	err = mlx5e_open_channels(priv);
 	if (err) {
-		netdev_err(netdev, "%s: mlx5e_open_channels failed, %d\n",
+		if_printf(ifp, "%s: mlx5e_open_channels failed, %d\n",
 		    __func__, err);
 		goto err_close_tises;
 	}
 	err = mlx5e_open_rqt(priv);
 	if (err) {
-		netdev_err(netdev, "%s: mlx5e_open_rqt failed, %d\n",
+		if_printf(ifp, "%s: mlx5e_open_rqt failed, %d\n",
 		    __func__, err);
 		goto err_close_channels;
 	}
 	err = mlx5e_open_tirs(priv);
 	if (err) {
-		netdev_err(netdev, "%s: mlx5e_open_tir failed, %d\n",
+		if_printf(ifp, "%s: mlx5e_open_tir failed, %d\n",
 		    __func__, err);
 		goto err_close_rqls;
 	}
 	err = mlx5e_open_flow_table(priv);
 	if (err) {
-		netdev_err(netdev, "%s: mlx5e_open_flow_table failed, %d\n",
+		if_printf(ifp, "%s: mlx5e_open_flow_table failed, %d\n",
 		    __func__, err);
 		goto err_close_tirs;
 	}
 	err = mlx5e_add_all_vlan_rules(priv);
 	if (err) {
-		netdev_err(netdev, "%s: mlx5e_add_all_vlan_rules failed, %d\n",
+		if_printf(ifp, "%s: mlx5e_add_all_vlan_rules failed, %d\n",
 		    __func__, err);
 		goto err_close_flow_table;
 	}
@@ -1798,15 +1798,15 @@ mlx5e_open(void *arg)
 	struct mlx5e_priv *priv = arg;
 
 	mutex_lock(&priv->state_lock);
-	mlx5e_open_locked(priv->netdev);
-	priv->netdev->if_drv_flags |= IFF_DRV_RUNNING;
+	mlx5e_open_locked(priv->ifp);
+	priv->ifp->if_drv_flags |= IFF_DRV_RUNNING;
 	mutex_unlock(&priv->state_lock);
 }
 
 int
-mlx5e_close_locked(struct net_device *netdev)
+mlx5e_close_locked(struct ifnet *ifp)
 {
-	struct mlx5e_priv *priv = netdev_priv(netdev);
+	struct mlx5e_priv *priv = ifp->if_softc;
 
 	/* check if already closed */
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state) == 0)
@@ -1816,7 +1816,7 @@ mlx5e_close_locked(struct net_device *netdev)
 
 	mlx5e_set_rx_mode_core(priv);
 	mlx5e_del_all_vlan_rules(priv);
-	if_link_state_change(priv->netdev, LINK_STATE_DOWN);
+	if_link_state_change(priv->ifp, LINK_STATE_DOWN);
 	mlx5e_close_flow_table(priv);
 	mlx5e_close_tirs(priv);
 	mlx5e_close_rqt(priv);
@@ -1827,9 +1827,9 @@ mlx5e_close_locked(struct net_device *netdev)
 }
 
 static uint64_t
-mlx5e_get_counter(struct ifnet *netdevice, ift_counter cnt)
+mlx5e_get_counter(struct ifnet *ifpice, ift_counter cnt)
 {
-	struct mlx5e_priv *priv = netdevice->if_softc;
+	struct mlx5e_priv *priv = ifpice->if_softc;
 	u64 retval;
 
 	/* mutex_lock(&priv->state_lock); XXX not allowed */
@@ -1862,7 +1862,7 @@ mlx5e_get_counter(struct ifnet *netdevice, ift_counter cnt)
 		retval = priv->stats.vport.tx_queue_dropped;
 		break;
 	default:
-		retval = if_get_counter_default(netdevice, cnt);
+		retval = if_get_counter_default(ifpice, cnt);
 		break;
 	}
 	/* mutex_unlock(&priv->state_lock); XXX not allowed */
@@ -1870,15 +1870,15 @@ mlx5e_get_counter(struct ifnet *netdevice, ift_counter cnt)
 }
 
 static void
-mlx5e_set_rx_mode(struct net_device *dev)
+mlx5e_set_rx_mode(struct ifnet *ifp)
 {
-	struct mlx5e_priv *priv = netdev_priv(dev);
+	struct mlx5e_priv *priv = ifp->if_softc;
 
 	schedule_work(&priv->set_rx_mode_work);
 }
 
 static int
-mlx5e_ioctl(struct ifnet *netdev, u_long command, caddr_t data)
+mlx5e_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 {
 	struct mlx5e_priv *priv;
 	struct ifreq *ifr;
@@ -1886,7 +1886,7 @@ mlx5e_ioctl(struct ifnet *netdev, u_long command, caddr_t data)
 	int mask = 0;
 	int value = 0;
 
-	priv = netdev->if_softc;
+	priv = ifp->if_softc;
 
 	switch (command) {
 	case SIOCSIFMTU:
@@ -1899,59 +1899,59 @@ mlx5e_ioctl(struct ifnet *netdev, u_long command, caddr_t data)
 			mutex_lock(&priv->state_lock);
 			was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
 			if (was_opened)
-				mlx5e_close_locked(netdev);
+				mlx5e_close_locked(ifp);
 
 			/* set new MTU */
-			mlx5e_set_dev_port_mtu(netdev, ifr->ifr_mtu);
+			mlx5e_set_dev_port_mtu(ifp, ifr->ifr_mtu);
 
 			if (was_opened)
-				mlx5e_open_locked(netdev);
+				mlx5e_open_locked(ifp);
 			mutex_unlock(&priv->state_lock);
 		} else {
 			error = EINVAL;
 		}
 		break;
 	case SIOCSIFFLAGS:
-		if (netdev->if_flags & IFF_UP) {
-			if ((netdev->if_drv_flags & IFF_DRV_RUNNING) == 0) {
+		if (ifp->if_flags & IFF_UP) {
+			if ((ifp->if_drv_flags & IFF_DRV_RUNNING) == 0) {
 				mutex_lock(&priv->state_lock);
 				if (test_bit(MLX5E_STATE_OPENED, &priv->state) == 0)
-					mlx5e_open_locked(netdev);
-				netdev->if_drv_flags |= IFF_DRV_RUNNING;
+					mlx5e_open_locked(ifp);
+				ifp->if_drv_flags |= IFF_DRV_RUNNING;
 				mutex_unlock(&priv->state_lock);
 			} else {
-				mlx5e_set_rx_mode(netdev);
+				mlx5e_set_rx_mode(ifp);
 			}
 		} else {
 			mutex_lock(&priv->state_lock);
-			if (netdev->if_drv_flags & IFF_DRV_RUNNING) {
+			if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
 				if (test_bit(MLX5E_STATE_OPENED, &priv->state) != 0)
-					mlx5e_close_locked(netdev);
-				netdev->if_drv_flags &= ~IFF_DRV_RUNNING;
-				if_link_state_change(netdev, LINK_STATE_DOWN);
+					mlx5e_close_locked(ifp);
+				ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
+				if_link_state_change(ifp, LINK_STATE_DOWN);
 			}
 			mutex_unlock(&priv->state_lock);
 		}
 		break;
 	case SIOCADDMULTI:
 	case SIOCDELMULTI:
-		mlx5e_set_rx_mode(netdev);
+		mlx5e_set_rx_mode(ifp);
 		break;
 	case SIOCSIFMEDIA:
 	case SIOCGIFMEDIA:
 	case SIOCGIFXMEDIA:
 		ifr = (struct ifreq *)data;
-		error = ifmedia_ioctl(netdev, ifr, &priv->media, command);
+		error = ifmedia_ioctl(ifp, ifr, &priv->media, command);
 		break;
 	case SIOCSIFCAP:
 		ifr = (struct ifreq *)data;
 		mutex_lock(&priv->state_lock);
-		mask = (ifr->ifr_reqcap ^ netdev->if_capenable) &
+		mask = (ifr->ifr_reqcap ^ ifp->if_capenable) &
 		    (IFCAP_HWCSUM | IFCAP_TSO4 | IFCAP_TSO6 | IFCAP_LRO |
 		    IFCAP_VLAN_HWTAGGING | IFCAP_VLAN_HWFILTER |
 		    IFCAP_WOL_MAGIC);
-		netdev->if_capenable ^= mask;
-		value = netdev->if_capenable;
+		ifp->if_capenable ^= mask;
+		value = ifp->if_capenable;
 		mutex_unlock(&priv->state_lock);
 		if (mask & IFCAP_VLAN_HWFILTER) {
 			if (value & IFCAP_VLAN_HWFILTER)
@@ -1959,10 +1959,10 @@ mlx5e_ioctl(struct ifnet *netdev, u_long command, caddr_t data)
 			else
 				mlx5e_disable_vlan_filter(priv);
 		}
-		VLAN_CAPABILITIES(netdev);
+		VLAN_CAPABILITIES(ifp);
 		break;
 	default:
-		error = ether_ioctl(netdev, command, data);
+		error = ether_ioctl(ifp, command, data);
 		break;
 	}
 	return (error);
@@ -1985,7 +1985,7 @@ mlx5e_check_required_hca_cap(struct mlx5_core_dev *mdev)
 }
 
 static void
-mlx5e_build_netdev_priv(struct mlx5_core_dev *mdev,
+mlx5e_build_ifp_priv(struct mlx5_core_dev *mdev,
     struct mlx5e_priv *priv,
     int num_comp_vectors)
 {
@@ -2035,14 +2035,14 @@ static int
 mlx5e_create_mkey(struct mlx5e_priv *priv, u32 pdn,
     struct mlx5_core_mr *mr)
 {
-	struct net_device *netdev = priv->netdev;
+	struct ifnet *ifp = priv->ifp;
 	struct mlx5_core_dev *mdev = priv->mdev;
 	struct mlx5_create_mkey_mbox_in *in;
 	int err;
 
 	in = mlx5_vzalloc(sizeof(*in));
 	if (in == NULL) {
-		netdev_err(netdev, "%s: failed to allocate inbox\n", __func__);
+		if_printf(ifp, "%s: failed to allocate inbox\n", __func__);
 		return (-ENOMEM);
 	}
 	in->seg.flags = MLX5_PERM_LOCAL_WRITE |
@@ -2054,7 +2054,7 @@ mlx5e_create_mkey(struct mlx5e_priv *priv, u32 pdn,
 	err = mlx5_core_create_mkey(mdev, mr, in, sizeof(*in), NULL, NULL,
 	    NULL);
 	if (err)
-		netdev_err(netdev, "%s: mlx5_core_create_mkey failed, %d\n",
+		if_printf(ifp, "%s: mlx5_core_create_mkey failed, %d\n",
 		    __func__, err);
 
 	kvfree(in);
@@ -2071,10 +2071,10 @@ static const char *mlx5e_pport_stats_desc[] = {
 };
 
 static void *
-mlx5e_create_netdev(struct mlx5_core_dev *mdev)
+mlx5e_create_ifp(struct mlx5_core_dev *mdev)
 {
 	static volatile int mlx5_en_unit;
-	struct net_device *netdev;
+	struct ifnet *ifp;
 	struct mlx5e_priv *priv;
 	u8 dev_addr[ETHER_ADDR_LEN] __aligned(4);
 	int ncv = mdev->priv.eq_table.num_comp_vectors;
@@ -2091,77 +2091,77 @@ mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 	}
 	setup_timer(&priv->watchdog, &mlx5e_update_stats, (uintptr_t)priv);
 	
-	netdev = priv->netdev = if_alloc(IFT_ETHER);
-	if (netdev == NULL) {
+	ifp = priv->ifp = if_alloc(IFT_ETHER);
+	if (ifp == NULL) {
 		mlx5_core_err(mdev, "if_alloc() failed\n");
 		kfree(priv);
 		return (NULL);
 	}
-	netdev->if_softc = priv;
-	if_initname(netdev, "mlx5en", atomic_fetchadd_int(&mlx5_en_unit, 1));
-	netdev->if_mtu = ETHERMTU;
-	netdev->if_init = mlx5e_open;
-	netdev->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
-	netdev->if_ioctl = mlx5e_ioctl;
-	netdev->if_transmit = mlx5e_xmit;
-	netdev->if_qflush = if_qflush;
-	netdev->if_get_counter = mlx5e_get_counter;
-	netdev->if_snd.ifq_maxlen = ifqmaxlen;
+	ifp->if_softc = priv;
+	if_initname(ifp, "mlx5en", atomic_fetchadd_int(&mlx5_en_unit, 1));
+	ifp->if_mtu = ETHERMTU;
+	ifp->if_init = mlx5e_open;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
+	ifp->if_ioctl = mlx5e_ioctl;
+	ifp->if_transmit = mlx5e_xmit;
+	ifp->if_qflush = if_qflush;
+	ifp->if_get_counter = mlx5e_get_counter;
+	ifp->if_snd.ifq_maxlen = ifqmaxlen;
 	/*
          * Set driver features
          */
-	netdev->if_capabilities |= IFCAP_RXCSUM | IFCAP_TXCSUM;
-	netdev->if_capabilities |= IFCAP_VLAN_MTU | IFCAP_VLAN_HWTAGGING;
-	netdev->if_capabilities |= IFCAP_VLAN_HWCSUM | IFCAP_VLAN_HWFILTER;
-	netdev->if_capabilities |= IFCAP_LINKSTATE | IFCAP_JUMBO_MTU;
-	netdev->if_capabilities |= IFCAP_LRO;
-	netdev->if_capabilities |= IFCAP_TSO4 | IFCAP_TSO6 | IFCAP_VLAN_HWTSO;
+	ifp->if_capabilities |= IFCAP_RXCSUM | IFCAP_TXCSUM;
+	ifp->if_capabilities |= IFCAP_VLAN_MTU | IFCAP_VLAN_HWTAGGING;
+	ifp->if_capabilities |= IFCAP_VLAN_HWCSUM | IFCAP_VLAN_HWFILTER;
+	ifp->if_capabilities |= IFCAP_LINKSTATE | IFCAP_JUMBO_MTU;
+	ifp->if_capabilities |= IFCAP_LRO;
+	ifp->if_capabilities |= IFCAP_TSO4 | IFCAP_TSO6 | IFCAP_VLAN_HWTSO;
 
 	/* set TSO limits so that we don't have to drop TX packets */
-	netdev->if_hw_tsomax = 65536 - (ETHER_HDR_LEN + ETHER_VLAN_ENCAP_LEN);
-	netdev->if_hw_tsomaxsegcount = MLX5E_MAX_TX_MBUF_FRAGS - 1 /* hdr */;
-	netdev->if_hw_tsomaxsegsize = 65536;	/* XXX can do up to 4GByte */
+	ifp->if_hw_tsomax = 65536 - (ETHER_HDR_LEN + ETHER_VLAN_ENCAP_LEN);
+	ifp->if_hw_tsomaxsegcount = MLX5E_MAX_TX_MBUF_FRAGS - 1 /* hdr */;
+	ifp->if_hw_tsomaxsegsize = 65536;	/* XXX can do up to 4GByte */
 
-	netdev->if_capenable = netdev->if_capabilities;
-	netdev->if_hwassist = 0;
-	if (netdev->if_capenable & (IFCAP_TSO4 | IFCAP_TSO6))
-		netdev->if_hwassist |= CSUM_TSO;
-	if (netdev->if_capenable & IFCAP_TXCSUM)
-		netdev->if_hwassist |= (CSUM_TCP | CSUM_UDP | CSUM_IP);
+	ifp->if_capenable = ifp->if_capabilities;
+	ifp->if_hwassist = 0;
+	if (ifp->if_capenable & (IFCAP_TSO4 | IFCAP_TSO6))
+		ifp->if_hwassist |= CSUM_TSO;
+	if (ifp->if_capenable & IFCAP_TXCSUM)
+		ifp->if_hwassist |= (CSUM_TCP | CSUM_UDP | CSUM_IP);
 
 	sysctl_ctx_init(&priv->sysctl_ctx);
 	priv->sysctl = SYSCTL_ADD_NODE(&priv->sysctl_ctx, SYSCTL_STATIC_CHILDREN(_hw),
-	    OID_AUTO, netdev->if_xname, CTLFLAG_RD, 0, "MLX5 ethernet");
+	    OID_AUTO, ifp->if_xname, CTLFLAG_RD, 0, "MLX5 ethernet");
 	if (priv->sysctl == NULL) {
 		mlx5_core_err(mdev, "SYSCTL_ADD_NODE() failed\n");
-		goto err_free_netdev;
+		goto err_free_ifp;
 	}
-	mlx5e_build_netdev_priv(mdev, priv, ncv);
+	mlx5e_build_ifp_priv(mdev, priv, ncv);
 
 	err = mlx5_alloc_map_uar(mdev, &priv->cq_uar);
 	if (err) {
-		netdev_err(netdev, "%s: mlx5_alloc_map_uar failed, %d\n",
+		if_printf(ifp, "%s: mlx5_alloc_map_uar failed, %d\n",
 		    __func__, err);
 		goto err_free_sysctl;
 	}
 	err = mlx5_core_alloc_pd(mdev, &priv->pdn);
 	if (err) {
-		netdev_err(netdev, "%s: mlx5_core_alloc_pd failed, %d\n",
+		if_printf(ifp, "%s: mlx5_core_alloc_pd failed, %d\n",
 		    __func__, err);
 		goto err_unmap_free_uar;
 	}
 	err = mlx5e_create_mkey(priv, priv->pdn, &priv->mr);
 	if (err) {
-		netdev_err(netdev, "%s: mlx5e_create_mkey failed, %d\n",
+		if_printf(ifp, "%s: mlx5e_create_mkey failed, %d\n",
 		    __func__, err);
 		goto err_dealloc_pd;
 	}
 	mlx5_query_nic_vport_mac_address(priv->mdev, dev_addr);
 
 	/* set default MTU */
-	mlx5e_set_dev_port_mtu(netdev, netdev->if_mtu);
+	mlx5e_set_dev_port_mtu(ifp, ifp->if_mtu);
 
-	ether_ifattach(netdev, dev_addr);
+	ether_ifattach(ifp, dev_addr);
 
 	/* Register for VLAN events */
 	priv->vlan_attach = EVENTHANDLER_REGISTER(vlan_config,
@@ -2174,7 +2174,7 @@ mlx5e_create_netdev(struct mlx5_core_dev *mdev)
 	priv->media_active_last = IFM_ETHER | IFM_AUTO;
 
 	/* Link is down by default */
-	if_link_state_change(netdev, LINK_STATE_DOWN);
+	if_link_state_change(ifp, LINK_STATE_DOWN);
 
 	/* Setup supported medias */
 	ifmedia_init(&priv->media, IFM_IMASK | IFM_ETH_FMASK,
@@ -2222,16 +2222,16 @@ err_unmap_free_uar:
 err_free_sysctl:
 	sysctl_ctx_free(&priv->sysctl_ctx);
 
-err_free_netdev:
-	if_free(netdev);
+err_free_ifp:
+	if_free(ifp);
 	return (NULL);
 }
 
 static void
-mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
+mlx5e_destroy_ifp(struct mlx5_core_dev *mdev, void *vpriv)
 {
 	struct mlx5e_priv *priv = vpriv;
-	struct net_device *netdev = priv->netdev;
+	struct ifnet *ifp = priv->ifp;
 
 	/* stop watchdog timer */
 	del_timer_sync(&priv->watchdog);
@@ -2243,7 +2243,7 @@ mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 
 	/* make sure device gets closed */
 	mutex_lock(&priv->state_lock);
-	mlx5e_close_locked(netdev);
+	mlx5e_close_locked(ifp);
 	mutex_unlock(&priv->state_lock);
 
 	/* destroy all remaining sysctl nodes */
@@ -2252,31 +2252,31 @@ mlx5e_destroy_netdev(struct mlx5_core_dev *mdev, void *vpriv)
 	sysctl_ctx_free(&priv->sysctl_ctx);
 
 	/* Unregister device - this will close the port if it was up */
-	ether_ifdetach(netdev);
+	ether_ifdetach(ifp);
 
 	mlx5_core_destroy_mkey(priv->mdev, &priv->mr);
 	mlx5_core_dealloc_pd(priv->mdev, priv->pdn);
 	mlx5_unmap_free_uar(priv->mdev, &priv->cq_uar);
 	mlx5e_disable_async_events(priv);
 	flush_scheduled_work();
-	if_free(netdev);
+	if_free(ifp);
 	kfree(priv);
 }
 
 static void *
-mlx5e_get_netdev(void *vpriv)
+mlx5e_get_ifp(void *vpriv)
 {
 	struct mlx5e_priv *priv = vpriv;
 
-	return (priv->netdev);
+	return (priv->ifp);
 }
 
 static struct mlx5_interface mlx5e_interface = {
-	.add = mlx5e_create_netdev,
-	.remove = mlx5e_destroy_netdev,
+	.add = mlx5e_create_ifp,
+	.remove = mlx5e_destroy_ifp,
 	.event = mlx5e_async_event,
 	.protocol = MLX5_INTERFACE_PROTOCOL_ETH,
-	.get_dev = mlx5e_get_netdev,
+	.get_dev = mlx5e_get_ifp,
 };
 
 void

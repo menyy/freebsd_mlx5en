@@ -65,9 +65,6 @@
 #include "transobj.h"
 #include "mlx5_core.h"
 
-#define	netdev_err(dev, ...) \
-	if_printf(dev, __VA_ARGS__)
-
 #define	MLX5E_PARAMS_MINIMUM_LOG_SQ_SIZE                0x7
 #define	MLX5E_PARAMS_DEFAULT_LOG_SQ_SIZE                0xa
 #define	MLX5E_PARAMS_MAXIMUM_LOG_SQ_SIZE                0xd
@@ -326,7 +323,7 @@ struct mlx5e_rq {
 	struct mbuf **mbuf;
 
 	struct device *pdev;
-	struct net_device *netdev;
+	struct ifnet *ifp;
 	struct mlx5e_rq_stats stats;
 	struct mlx5e_cq cq;
 #ifdef HAVE_TURBO_LRO
@@ -411,7 +408,7 @@ struct mlx5e_channel {
 	struct mlx5e_rq rq;
 	struct mlx5e_sq sq[MLX5E_MAX_TX_NUM_TC];
 	struct device *pdev;
-	struct net_device *netdev;
+	struct ifnet *ifp;
 	u32	mkey_be;
 	u8	num_tc;
 
@@ -457,8 +454,8 @@ struct mlx5e_eth_addr_hash_head {
 };
 
 struct mlx5e_eth_addr_db {
-	struct mlx5e_eth_addr_hash_head netdev_uc[MLX5E_ETH_ADDR_HASH_SIZE];
-	struct mlx5e_eth_addr_hash_head netdev_mc[MLX5E_ETH_ADDR_HASH_SIZE];
+	struct mlx5e_eth_addr_hash_head if_uc[MLX5E_ETH_ADDR_HASH_SIZE];
+	struct mlx5e_eth_addr_hash_head if_mc[MLX5E_ETH_ADDR_HASH_SIZE];
 	struct mlx5e_eth_addr_info broadcast;
 	struct mlx5e_eth_addr_info allmulti;
 	struct mlx5e_eth_addr_info promisc;
@@ -516,7 +513,7 @@ struct mlx5e_priv {
 	struct work_struct set_rx_mode_work;
 
 	struct mlx5_core_dev *mdev;
-	struct net_device *netdev;
+	struct ifnet *ifp;
 	struct sysctl_ctx_list sysctl_ctx;
 	struct sysctl_oid *sysctl;
 	struct mlx5e_stats stats;
@@ -576,10 +573,10 @@ enum mlx5e_link_mode {
 #define	MLX5E_PROT_MASK(link_mode) (1 << (link_mode))
 #define	MLX5E_FLD_MAX(typ, fld) ((1ULL << __mlx5_bit_sz(typ, fld)) - 1ULL)
 
-int	mlx5e_xmit(struct net_device *dev, struct mbuf *mb);
+int	mlx5e_xmit(struct ifnet *, struct mbuf *);
 
-int	mlx5e_open_locked(struct net_device *);
-int	mlx5e_close_locked(struct net_device *);
+int	mlx5e_open_locked(struct ifnet *);
+int	mlx5e_close_locked(struct ifnet *);
 
 void	mlx5e_completion_event(struct mlx5_core_cq *mcq);
 void	mlx5e_cq_error_event(struct mlx5_core_cq *mcq, enum mlx5_event event);
@@ -592,8 +589,8 @@ void	mlx5e_close_flow_table(struct mlx5e_priv *priv);
 void	mlx5e_set_rx_mode_core(struct mlx5e_priv *priv);
 void	mlx5e_set_rx_mode_work(struct work_struct *work);
 
-void	mlx5e_vlan_rx_add_vid(void *arg, struct net_device *dev, u16 vid);
-void	mlx5e_vlan_rx_kill_vid(void *arg, struct net_device *dev, u16 vid);
+void	mlx5e_vlan_rx_add_vid(void *, struct ifnet *, u16);
+void	mlx5e_vlan_rx_kill_vid(void *, struct ifnet *, u16);
 void	mlx5e_enable_vlan_filter(struct mlx5e_priv *priv);
 void	mlx5e_disable_vlan_filter(struct mlx5e_priv *priv);
 int	mlx5e_add_all_vlan_rules(struct mlx5e_priv *priv);
