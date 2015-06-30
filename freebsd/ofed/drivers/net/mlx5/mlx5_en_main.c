@@ -168,6 +168,8 @@ static const struct {
 	},
 };
 
+MALLOC_DEFINE(M_MLX5EN, "MLX5EN", "MLX5 Ethernet");
+
 static void
 mlx5e_update_carrier(struct mlx5e_priv *priv)
 {
@@ -527,7 +529,7 @@ mlx5e_create_rq(struct mlx5e_channel *c,
 	}
 
 	wq_sz = mlx5_wq_ll_get_size(&rq->wq);
-	rq->mbuf = kzalloc(wq_sz * sizeof(rq->mbuf[0]), GFP_KERNEL);
+	rq->mbuf = malloc(wq_sz * sizeof(rq->mbuf[0]), M_MLX5EN, M_WAITOK | M_ZERO);
 	if (rq->mbuf == NULL) {
 		err = -ENOMEM;
 		goto err_rq_wq_destroy;
@@ -582,7 +584,7 @@ mlx5e_destroy_rq(struct mlx5e_rq *rq)
 	tcp_lro_free(&rq->lro);
 #endif
 
-	kfree(rq->mbuf);
+	free(rq->mbuf, M_MLX5EN);
 	mlx5_wq_destroy(&rq->wq_ctrl);
 }
 
@@ -745,8 +747,8 @@ mlx5e_close_rq_wait(struct mlx5e_rq *rq)
 static void
 mlx5e_free_sq_db(struct mlx5e_sq *sq)
 {
-	kfree(sq->dma_fifo);
-	kfree(sq->mbuf);
+	free(sq->dma_fifo, M_MLX5EN);
+	free(sq->mbuf, M_MLX5EN);
 }
 
 static int
@@ -755,8 +757,8 @@ mlx5e_alloc_sq_db(struct mlx5e_sq *sq)
 	int wq_sz = mlx5_wq_cyc_get_size(&sq->wq);
 	int df_sz = wq_sz * MLX5_SEND_WQEBB_NUM_DS;
 
-	sq->mbuf = kzalloc(wq_sz * sizeof(sq->mbuf[0]), GFP_KERNEL);
-	sq->dma_fifo = kzalloc(df_sz * sizeof(*sq->dma_fifo), GFP_KERNEL);
+	sq->mbuf = malloc(wq_sz * sizeof(sq->mbuf[0]), M_MLX5EN, M_WAITOK | M_ZERO);
+	sq->dma_fifo = malloc(df_sz * sizeof(*sq->dma_fifo), M_MLX5EN, M_WAITOK | M_ZERO);
 	if (sq->mbuf == NULL || sq->dma_fifo == NULL) {
 		mlx5e_free_sq_db(sq);
 		return (-ENOMEM);
@@ -1226,7 +1228,7 @@ mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 	struct mlx5e_channel *c;
 	int err;
 
-	c = kzalloc(sizeof(*c), GFP_KERNEL);
+	c = malloc(sizeof(*c), M_MLX5EN, M_WAITOK | M_ZERO);
 	if (c == NULL)
 		return (-ENOMEM);
 
@@ -1281,7 +1283,7 @@ err_close_tx_cqs:
 err_free:
 	/* destroy mutexes */
 	mlx5e_chan_mtx_destroy(c);
-	kfree(c);
+	free(c, M_MLX5EN);
 	return (err);
 }
 
@@ -1314,7 +1316,7 @@ mlx5e_close_channel_wait(struct mlx5e_channel * volatile *pp)
 	mlx5e_close_tx_cqs(c);
 	/* destroy mutexes */
 	mlx5e_chan_mtx_destroy(c);
-	kfree(c);
+	free(c, M_MLX5EN);
 }
 
 static void
@@ -1401,12 +1403,13 @@ static int
 mlx5e_open_channels(struct mlx5e_priv *priv)
 {
 	struct mlx5e_channel_param cparam;
+	void *ptr;
 	int err;
 	int i;
 	int j;
 
-	priv->channel = kcalloc(priv->params.num_channels,
-	    sizeof(struct mlx5e_channel *), GFP_KERNEL);
+	priv->channel = malloc(priv->params.num_channels *
+	    sizeof(struct mlx5e_channel *), M_MLX5EN, M_WAITOK | M_ZERO);
 	if (priv->channel == NULL)
 		return (-ENOMEM);
 
@@ -1431,8 +1434,10 @@ err_close_channels:
 		mlx5e_close_channel_wait(&priv->channel[i]);
 	}
 
-	kfree(priv->channel);
+	ptr = __DECONST(void *, priv->channel);
 	priv->channel = NULL;
+
+	free(ptr, M_MLX5EN);
 
 	return (err);
 }
@@ -1440,6 +1445,7 @@ err_close_channels:
 static void
 mlx5e_close_channels(struct mlx5e_priv *priv)
 {
+	void *ptr;
 	int i;
 
 	if (priv->channel == NULL)
@@ -1450,8 +1456,10 @@ mlx5e_close_channels(struct mlx5e_priv *priv)
 	for (i = 0; i < priv->params.num_channels; i++)
 		mlx5e_close_channel_wait(&priv->channel[i]);
 
-	kfree(priv->channel);
+	ptr = __DECONST(void *, priv->channel);
 	priv->channel = NULL;
+
+	free(ptr, M_MLX5EN);
 }
 
 static int
@@ -2118,9 +2126,9 @@ mlx5e_create_ifp(struct mlx5_core_dev *mdev)
 		mlx5_core_dbg(mdev, "mlx5e_check_required_hca_cap() failed\n");
 		return (NULL);
 	}
-	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	priv = malloc(sizeof(*priv), M_MLX5EN, M_WAITOK | M_ZERO);
 	if (priv == NULL) {
-		mlx5_core_err(mdev, "kzalloc() failed\n");
+		mlx5_core_err(mdev, "malloc() failed\n");
 		return (NULL);
 	}
 	mlx5e_priv_mtx_init(priv);
@@ -2262,7 +2270,7 @@ err_free_ifp:
 
 err_free_priv:
 	mlx5e_priv_mtx_destroy(priv);
-	kfree(priv);
+	free(priv, M_MLX5EN);
 	return (NULL);
 }
 
@@ -2300,7 +2308,7 @@ mlx5e_destroy_ifp(struct mlx5_core_dev *mdev, void *vpriv)
 	flush_scheduled_work();
 	if_free(ifp);
 	mlx5e_priv_mtx_destroy(priv);
-	kfree(priv);
+	free(priv, M_MLX5EN);
 }
 
 static void *

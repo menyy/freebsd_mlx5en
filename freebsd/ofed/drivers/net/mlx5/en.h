@@ -96,6 +96,8 @@
   (MLX5E_MAX_TX_HEADER - sizeof(struct mlx5e_tx_wqe) + \
   sizeof(((struct mlx5e_tx_wqe *)0)->eth.inline_hdr_start))	/* bytes */
 
+MALLOC_DECLARE(M_MLX5EN);
+
 struct mlx5_core_dev;
 struct mlx5e_cq;
 

@@ -80,7 +80,7 @@ mlx5e_add_eth_addr_to_hash(struct mlx5e_eth_addr_hash_head *hash,
 		}
 	}
 
-	hn = kzalloc(sizeof(*hn), GFP_ATOMIC);
+	hn = malloc(sizeof(*hn), M_MLX5EN, M_NOWAIT | M_ZERO);
 	if (hn == NULL)
 		return;
 
@@ -94,7 +94,7 @@ static void
 mlx5e_del_eth_addr_from_hash(struct mlx5e_eth_addr_hash_node *hn)
 {
 	LIST_REMOVE(hn, hlist);
-	kfree(hn);
+	free(hn, M_MLX5EN);
 }
 
 static void
@@ -726,7 +726,7 @@ mlx5e_create_main_flow_table(struct mlx5e_priv *priv)
 	struct mlx5_flow_table_group *g;
 	u8 *dmac;
 
-	g = kcalloc(9, sizeof(*g), GFP_KERNEL);
+	g = malloc(9 * sizeof(*g), M_MLX5EN, M_WAITOK | M_ZERO);
 	if (g == NULL)
 		return (-ENOMEM);
 
@@ -794,7 +794,7 @@ mlx5e_create_main_flow_table(struct mlx5e_priv *priv)
 	priv->ft.main = mlx5_create_flow_table(priv->mdev, 1,
 	    MLX5_FLOW_TABLE_TYPE_NIC_RCV,
 	    9, g);
-	kfree(g);
+	free(g, M_MLX5EN);
 
 	return (priv->ft.main ? 0 : -ENOMEM);
 }
@@ -811,7 +811,7 @@ mlx5e_create_vlan_flow_table(struct mlx5e_priv *priv)
 {
 	struct mlx5_flow_table_group *g;
 
-	g = kcalloc(2, sizeof(*g), GFP_KERNEL);
+	g = malloc(2 * sizeof(*g), M_MLX5EN, M_WAITOK | M_ZERO);
 	if (g == NULL)
 		return (-ENOMEM);
 
@@ -831,7 +831,7 @@ mlx5e_create_vlan_flow_table(struct mlx5e_priv *priv)
 	priv->ft.vlan = mlx5_create_flow_table(priv->mdev, 0,
 	    MLX5_FLOW_TABLE_TYPE_NIC_RCV,
 	    2, g);
-	kfree(g);
+	free(g, M_MLX5EN);
 
 	return (priv->ft.vlan ? 0 : -ENOMEM);
 }
