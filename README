@@ -1,0 +1,20 @@
+READONLY clone of mlx5en and mlx5 drivers to be used with Connectx-4.
+
+The top commit in this repository includes changes needed for the code to be used outside of Mellanox.
+The repository should be synced automiaticlly with the internal copy at Mellanox.
+
+In order to compile the driver, you will need:
+
+- 11-current.
+- compiling and loading the linuxapi module.
+
+Compiling:
+
+1) Clone this repository
+2) Run inside the cloned repository:
+	git submodule init
+	git submodule update --remote
+3) then use freebsd_build.sh to compile and install the modules.
+4) kldload mlx5en (assuming linuxapi module is already installed or loaded).
+
+For any problem please contact markb@mellanox.com.

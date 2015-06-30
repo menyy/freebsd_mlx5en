@@ -1,4 +1,4 @@
 [submodule "drivex"]
 	path = drivex
-	url = ssh://l-gerrit.mtl.labs.mlnx:29418/drivex
+	url = https://github.com/Mellanox/freebsd_drivex_generated.git
 	branch = master
