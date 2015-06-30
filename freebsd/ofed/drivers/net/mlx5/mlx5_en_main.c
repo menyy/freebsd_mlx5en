@@ -437,13 +437,13 @@ free_out:
 }
 
 static void
-mlx5e_update_stats(unsigned long data)
+mlx5e_update_stats(void *arg)
 {
-	struct mlx5e_priv *priv = (struct mlx5e_priv *)data;
+	struct mlx5e_priv *priv = arg;
 
 	schedule_work(&priv->update_stats_work);
 
-	mod_timer(&priv->watchdog, jiffies + HZ);
+	callout_reset(&priv->watchdog, hz, &mlx5e_update_stats, priv);
 }
 
 static void
@@ -2094,6 +2094,7 @@ mlx5e_priv_mtx_init(struct mlx5e_priv *priv)
 {
 	mtx_init(&priv->async_events_mtx, "mlx5async", MTX_NETWORK_LOCK, MTX_DEF);
 	sx_init(&priv->state_lock, "mlx5state");
+	callout_init_mtx(&priv->watchdog, &priv->async_events_mtx, 0);
 }
 
 static void
@@ -2124,8 +2125,6 @@ mlx5e_create_ifp(struct mlx5_core_dev *mdev)
 	}
 	mlx5e_priv_mtx_init(priv);
 
-	setup_timer(&priv->watchdog, &mlx5e_update_stats, (uintptr_t)priv);
-	
 	ifp = priv->ifp = if_alloc(IFT_ETHER);
 	if (ifp == NULL) {
 		mlx5_core_err(mdev, "if_alloc() failed\n");
@@ -2243,7 +2242,9 @@ mlx5e_create_ifp(struct mlx5_core_dev *mdev)
 
 	mlx5e_create_ethtool(priv);
 
-	mod_timer(&priv->watchdog, jiffies + HZ);
+	mtx_lock(&priv->async_events_mtx);
+	mlx5e_update_stats(priv);
+	mtx_unlock(&priv->async_events_mtx);
 	
 	return (priv);
 
@@ -2272,7 +2273,7 @@ mlx5e_destroy_ifp(struct mlx5_core_dev *mdev, void *vpriv)
 	struct ifnet *ifp = priv->ifp;
 
 	/* stop watchdog timer */
-	del_timer_sync(&priv->watchdog);
+	callout_drain(&priv->watchdog);
 	
 	if (priv->vlan_attach != NULL)
 		EVENTHANDLER_DEREGISTER(vlan_config, priv->vlan_attach);

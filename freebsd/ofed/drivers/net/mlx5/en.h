@@ -527,7 +527,7 @@ struct mlx5e_priv {
 	int	media_active_last;
 	int	media_active_user;
 
-	struct timer_list watchdog;
+	struct callout watchdog;
 };
 
 #define	MLX5E_NET_IP_ALIGN 2
