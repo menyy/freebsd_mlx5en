@@ -39,7 +39,7 @@ mlx5e_ethtool_handler(SYSCTL_HANDLER_ARGS)
 	int was_opened;
 	int error;
 
-	mutex_lock(&priv->state_lock);
+	PRIV_LOCK(priv);
 	error = sysctl_handle_64(oidp,
 	    priv->params_ethtool.arg + arg2, 0, req);
 	if (error || req->newptr == NULL)
@@ -131,7 +131,7 @@ mlx5e_ethtool_handler(SYSCTL_HANDLER_ARGS)
 	if (was_opened)
 		mlx5e_open_locked(priv->ifp);
 done:
-	mutex_unlock(&priv->state_lock);
+	PRIV_UNLOCK(priv);
 	return (error);
 }
 

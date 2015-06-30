@@ -492,27 +492,27 @@ mlx5e_del_vlan_rule(struct mlx5e_priv *priv,
 void
 mlx5e_enable_vlan_filter(struct mlx5e_priv *priv)
 {
-	mutex_lock(&priv->state_lock);
+	PRIV_LOCK(priv);
 	if (priv->vlan.filter_disabled) {
 		priv->vlan.filter_disabled = false;
 		if (test_bit(MLX5E_STATE_OPENED, &priv->state))
 			mlx5e_del_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_ANY_VID,
 			    0);
 	}
-	mutex_unlock(&priv->state_lock);
+	PRIV_UNLOCK(priv);
 }
 
 void
 mlx5e_disable_vlan_filter(struct mlx5e_priv *priv)
 {
-	mutex_lock(&priv->state_lock);
+	PRIV_LOCK(priv);
 	if (!priv->vlan.filter_disabled) {
 		priv->vlan.filter_disabled = true;
 		if (test_bit(MLX5E_STATE_OPENED, &priv->state))
 			mlx5e_add_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_ANY_VID,
 			    0);
 	}
-	mutex_unlock(&priv->state_lock);
+	PRIV_UNLOCK(priv);
 }
 
 void
@@ -520,11 +520,11 @@ mlx5e_vlan_rx_add_vid(void *arg, struct ifnet *ifp, u16 vid)
 {
 	struct mlx5e_priv *priv = ifp->if_softc;
 
-	mutex_lock(&priv->state_lock);
+	PRIV_LOCK(priv);
 	set_bit(vid, priv->vlan.active_vlans);
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
 		mlx5e_add_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_MATCH_VID, vid);
-	mutex_unlock(&priv->state_lock);
+	PRIV_UNLOCK(priv);
 }
 
 void
@@ -532,11 +532,11 @@ mlx5e_vlan_rx_kill_vid(void *arg, struct ifnet *ifp, u16 vid)
 {
 	struct mlx5e_priv *priv = ifp->if_softc;
 
-	mutex_lock(&priv->state_lock);
+	PRIV_LOCK(priv);
 	clear_bit(vid, priv->vlan.active_vlans);
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
 		mlx5e_del_vlan_rule(priv, MLX5E_VLAN_RULE_TYPE_MATCH_VID, vid);
-	mutex_unlock(&priv->state_lock);
+	PRIV_UNLOCK(priv);
 }
 
 int
@@ -714,10 +714,10 @@ mlx5e_set_rx_mode_work(struct work_struct *work)
 	struct mlx5e_priv *priv =
 	    container_of(work, struct mlx5e_priv, set_rx_mode_work);
 
-	mutex_lock(&priv->state_lock);
+	PRIV_LOCK(priv);
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
 		mlx5e_set_rx_mode_core(priv);
-	mutex_unlock(&priv->state_lock);
+	PRIV_UNLOCK(priv);
 }
 
 static int

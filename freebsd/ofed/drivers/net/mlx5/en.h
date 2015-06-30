@@ -318,7 +318,7 @@ struct mlx5e_cq {
 struct mlx5e_rq {
 	/* data path */
 	struct mlx5_wq_ll wq;
-	spinlock_t lock;
+	struct mtx mtx;
 	u32	wqe_sz;
 	struct mbuf **mbuf;
 
@@ -360,7 +360,7 @@ enum {
 
 struct mlx5e_sq {
 	/* data path */
-	spinlock_t lock;
+	struct mtx mtx;
 
 	/* dirtied @completion */
 	u16	cc;
@@ -491,7 +491,9 @@ struct mlx5e_priv {
 	/* priv data path fields - end */
 
 	unsigned long state;
-	struct mutex state_lock;	/* Protects Interface state */
+#define	PRIV_LOCK(priv) sx_xlock(&(priv)->state_lock)
+#define	PRIV_UNLOCK(priv) sx_xunlock(&(priv)->state_lock)
+	struct sx state_lock;	/* Protects Interface state */
 	struct mlx5_uar cq_uar;
 	u32	pdn;
 	struct mlx5_core_mr mr;
@@ -507,7 +509,7 @@ struct mlx5e_priv {
 
 	struct mlx5e_params params;
 	struct mlx5e_params_ethtool params_ethtool;
-	spinlock_t async_events_spinlock;	/* sync hw events */
+	struct mtx async_events_mtx;	/* sync hw events */
 	struct work_struct update_stats_work;
 	struct work_struct update_carrier_work;
 	struct work_struct set_rx_mode_work;

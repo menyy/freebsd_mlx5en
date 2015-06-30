@@ -257,10 +257,10 @@ mlx5e_update_carrier_work(struct work_struct *work)
 	struct mlx5e_priv *priv = container_of(work, struct mlx5e_priv,
 	    update_carrier_work);
 
-	mutex_lock(&priv->state_lock);
+	PRIV_LOCK(priv);
 	if (test_bit(MLX5E_STATE_OPENED, &priv->state))
 		mlx5e_update_carrier(priv);
-	mutex_unlock(&priv->state_lock);
+	PRIV_UNLOCK(priv);
 }
 
 static void
@@ -318,7 +318,7 @@ mlx5e_update_stats_work(struct work_struct *work)
 	u64 tx_offload_none;
 	int i, j;
 
-	mutex_lock(&priv->state_lock);
+	PRIV_LOCK(priv);
 	out = mlx5_vzalloc(outlen);
 	if (out == NULL)
 		goto free_out;
@@ -433,7 +433,7 @@ mlx5e_update_stats_work(struct work_struct *work)
 	mlx5e_update_pport_counters(priv);
 free_out:
 	kvfree(out);
-	mutex_unlock(&priv->state_lock);
+	PRIV_UNLOCK(priv);
 }
 
 static void
@@ -467,10 +467,10 @@ mlx5e_async_event(struct mlx5_core_dev *mdev, void *vpriv,
 {
 	struct mlx5e_priv *priv = vpriv;
 
-	spin_lock(&priv->async_events_spinlock);
+	mtx_lock(&priv->async_events_mtx);
 	if (test_bit(MLX5E_STATE_ASYNC_EVENTS_ENABLE, &priv->state))
 		mlx5e_async_event_sub(priv, event);
-	spin_unlock(&priv->async_events_spinlock);
+	mtx_unlock(&priv->async_events_mtx);
 }
 
 static void
@@ -482,9 +482,9 @@ mlx5e_enable_async_events(struct mlx5e_priv *priv)
 static void
 mlx5e_disable_async_events(struct mlx5e_priv *priv)
 {
-	spin_lock_irq(&priv->async_events_spinlock);
+	mtx_lock(&priv->async_events_mtx);
 	clear_bit(MLX5E_STATE_ASYNC_EVENTS_ENABLE, &priv->state);
-	spin_unlock_irq(&priv->async_events_spinlock);
+	mtx_unlock(&priv->async_events_mtx);
 }
 
 static const char *mlx5e_rq_stats_desc[] = {
@@ -1130,17 +1130,12 @@ mlx5e_open_tx_cqs(struct mlx5e_channel *c,
 	int tc;
 
 	for (tc = 0; tc < c->num_tc; tc++) {
-		/* init mutex */
-		spin_lock_init(&c->sq[tc].lock);
-	}
-	for (tc = 0; tc < c->num_tc; tc++) {
 		/* open completion queue */
 		err = mlx5e_open_cq(c, &cparam->tx_cq, &c->sq[tc].cq,
 		    &mlx5e_tx_cq_function);
 		if (err)
 			goto err_close_tx_cqs;
 	}
-
 	return (0);
 
 err_close_tx_cqs:
@@ -1201,6 +1196,28 @@ mlx5e_close_sqs_wait(struct mlx5e_channel *c)
 		mlx5e_close_sq_wait(&c->sq[tc]);
 }
 
+static void
+mlx5e_chan_mtx_init(struct mlx5e_channel *c)
+{
+	int tc;
+
+	mtx_init(&c->rq.mtx, "mlx5rx", MTX_NETWORK_LOCK, MTX_DEF);
+
+	for (tc = 0; tc < c->num_tc; tc++)
+		mtx_init(&c->sq[tc].mtx, "mlx5tx", MTX_NETWORK_LOCK, MTX_DEF);
+}
+
+static void
+mlx5e_chan_mtx_destroy(struct mlx5e_channel *c)
+{
+	int tc;
+
+	mtx_destroy(&c->rq.mtx);
+
+	for (tc = 0; tc < c->num_tc; tc++)
+		mtx_destroy(&c->sq[tc].mtx);
+}
+
 static int
 mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
     struct mlx5e_channel_param *cparam,
@@ -1221,14 +1238,15 @@ mlx5e_open_channel(struct mlx5e_priv *priv, int ix,
 	c->mkey_be = cpu_to_be32(priv->mr.key);
 	c->num_tc = priv->num_tc;
 
+	/* init mutexes */
+	mlx5e_chan_mtx_init(c);
+
+	/* open transmit completion queue */
 	err = mlx5e_open_tx_cqs(c, cparam);
 	if (err)
 		goto err_free;
 
-	/* receive completion queue lock */
-	spin_lock_init(&c->rq.lock);
-
-	/* open completion queue */
+	/* open receive completion queue */
 	err = mlx5e_open_cq(c, &cparam->rx_cq, &c->rq.cq,
 	    &mlx5e_rx_cq_function);
 	if (err)
@@ -1261,6 +1279,8 @@ err_close_tx_cqs:
 	mlx5e_close_tx_cqs(c);
 
 err_free:
+	/* destroy mutexes */
+	mlx5e_chan_mtx_destroy(c);
 	kfree(c);
 	return (err);
 }
@@ -1292,6 +1312,8 @@ mlx5e_close_channel_wait(struct mlx5e_channel * volatile *pp)
 	mlx5e_close_sqs_wait(c);
 	mlx5e_close_cq(&c->rq.cq);
 	mlx5e_close_tx_cqs(c);
+	/* destroy mutexes */
+	mlx5e_chan_mtx_destroy(c);
 	kfree(c);
 }
 
@@ -1797,10 +1819,10 @@ mlx5e_open(void *arg)
 {
 	struct mlx5e_priv *priv = arg;
 
-	mutex_lock(&priv->state_lock);
+	PRIV_LOCK(priv);
 	mlx5e_open_locked(priv->ifp);
 	priv->ifp->if_drv_flags |= IFF_DRV_RUNNING;
-	mutex_unlock(&priv->state_lock);
+	PRIV_UNLOCK(priv);
 }
 
 int
@@ -1832,7 +1854,7 @@ mlx5e_get_counter(struct ifnet *ifpice, ift_counter cnt)
 	struct mlx5e_priv *priv = ifpice->if_softc;
 	u64 retval;
 
-	/* mutex_lock(&priv->state_lock); XXX not allowed */
+	/* PRIV_LOCK(priv); XXX not allowed */
 	switch (cnt) {
 	case IFCOUNTER_IPACKETS:
 		retval = priv->stats.vport.rx_packets;
@@ -1865,7 +1887,7 @@ mlx5e_get_counter(struct ifnet *ifpice, ift_counter cnt)
 		retval = if_get_counter_default(ifpice, cnt);
 		break;
 	}
-	/* mutex_unlock(&priv->state_lock); XXX not allowed */
+	/* PRIV_UNLOCK(priv); XXX not allowed */
 	return (retval);
 }
 
@@ -1896,7 +1918,7 @@ mlx5e_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 		    ifr->ifr_mtu + MLX5E_MTU_OVERHEAD <= MLX5E_MTU_MAX) {
 			int was_opened;
 
-			mutex_lock(&priv->state_lock);
+			PRIV_LOCK(priv);
 			was_opened = test_bit(MLX5E_STATE_OPENED, &priv->state);
 			if (was_opened)
 				mlx5e_close_locked(ifp);
@@ -1906,7 +1928,7 @@ mlx5e_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 
 			if (was_opened)
 				mlx5e_open_locked(ifp);
-			mutex_unlock(&priv->state_lock);
+			PRIV_UNLOCK(priv);
 		} else {
 			error = EINVAL;
 		}
@@ -1914,23 +1936,23 @@ mlx5e_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 	case SIOCSIFFLAGS:
 		if (ifp->if_flags & IFF_UP) {
 			if ((ifp->if_drv_flags & IFF_DRV_RUNNING) == 0) {
-				mutex_lock(&priv->state_lock);
+				PRIV_LOCK(priv);
 				if (test_bit(MLX5E_STATE_OPENED, &priv->state) == 0)
 					mlx5e_open_locked(ifp);
 				ifp->if_drv_flags |= IFF_DRV_RUNNING;
-				mutex_unlock(&priv->state_lock);
+				PRIV_UNLOCK(priv);
 			} else {
 				mlx5e_set_rx_mode(ifp);
 			}
 		} else {
-			mutex_lock(&priv->state_lock);
+			PRIV_LOCK(priv);
 			if (ifp->if_drv_flags & IFF_DRV_RUNNING) {
 				if (test_bit(MLX5E_STATE_OPENED, &priv->state) != 0)
 					mlx5e_close_locked(ifp);
 				ifp->if_drv_flags &= ~IFF_DRV_RUNNING;
 				if_link_state_change(ifp, LINK_STATE_DOWN);
 			}
-			mutex_unlock(&priv->state_lock);
+			PRIV_UNLOCK(priv);
 		}
 		break;
 	case SIOCADDMULTI:
@@ -1945,14 +1967,14 @@ mlx5e_ioctl(struct ifnet *ifp, u_long command, caddr_t data)
 		break;
 	case SIOCSIFCAP:
 		ifr = (struct ifreq *)data;
-		mutex_lock(&priv->state_lock);
+		PRIV_LOCK(priv);
 		mask = (ifr->ifr_reqcap ^ ifp->if_capenable) &
 		    (IFCAP_HWCSUM | IFCAP_TSO4 | IFCAP_TSO6 | IFCAP_LRO |
 		    IFCAP_VLAN_HWTAGGING | IFCAP_VLAN_HWFILTER |
 		    IFCAP_WOL_MAGIC);
 		ifp->if_capenable ^= mask;
 		value = ifp->if_capenable;
-		mutex_unlock(&priv->state_lock);
+		PRIV_UNLOCK(priv);
 		if (mask & IFCAP_VLAN_HWFILTER) {
 			if (value & IFCAP_VLAN_HWFILTER)
 				mlx5e_enable_vlan_filter(priv);
@@ -2023,9 +2045,6 @@ mlx5e_build_ifp_priv(struct mlx5_core_dev *mdev,
 	priv->num_tc = priv->params.num_tc;
 	priv->default_vlan_prio = priv->params.default_vlan_prio;
 
-	spin_lock_init(&priv->async_events_spinlock);
-	mutex_init(&priv->state_lock);
-
 	INIT_WORK(&priv->update_stats_work, mlx5e_update_stats_work);
 	INIT_WORK(&priv->update_carrier_work, mlx5e_update_carrier_work);
 	INIT_WORK(&priv->set_rx_mode_work, mlx5e_set_rx_mode_work);
@@ -2070,6 +2089,20 @@ static const char *mlx5e_pport_stats_desc[] = {
 	MLX5E_PPORT_STATS(MLX5E_STATS_DESC)
 };
 
+static void
+mlx5e_priv_mtx_init(struct mlx5e_priv *priv)
+{
+	mtx_init(&priv->async_events_mtx, "mlx5async", MTX_NETWORK_LOCK, MTX_DEF);
+	sx_init(&priv->state_lock, "mlx5state");
+}
+
+static void
+mlx5e_priv_mtx_destroy(struct mlx5e_priv *priv)
+{
+	mtx_destroy(&priv->async_events_mtx);
+	sx_destroy(&priv->state_lock);
+}
+
 static void *
 mlx5e_create_ifp(struct mlx5_core_dev *mdev)
 {
@@ -2089,13 +2122,14 @@ mlx5e_create_ifp(struct mlx5_core_dev *mdev)
 		mlx5_core_err(mdev, "kzalloc() failed\n");
 		return (NULL);
 	}
+	mlx5e_priv_mtx_init(priv);
+
 	setup_timer(&priv->watchdog, &mlx5e_update_stats, (uintptr_t)priv);
 	
 	ifp = priv->ifp = if_alloc(IFT_ETHER);
 	if (ifp == NULL) {
 		mlx5_core_err(mdev, "if_alloc() failed\n");
-		kfree(priv);
-		return (NULL);
+		goto err_free_priv;
 	}
 	ifp->if_softc = priv;
 	if_initname(ifp, "mlx5en", atomic_fetchadd_int(&mlx5_en_unit, 1));
@@ -2224,6 +2258,10 @@ err_free_sysctl:
 
 err_free_ifp:
 	if_free(ifp);
+
+err_free_priv:
+	mlx5e_priv_mtx_destroy(priv);
+	kfree(priv);
 	return (NULL);
 }
 
@@ -2242,9 +2280,9 @@ mlx5e_destroy_ifp(struct mlx5_core_dev *mdev, void *vpriv)
 		EVENTHANDLER_DEREGISTER(vlan_unconfig, priv->vlan_detach);
 
 	/* make sure device gets closed */
-	mutex_lock(&priv->state_lock);
+	PRIV_LOCK(priv);
 	mlx5e_close_locked(ifp);
-	mutex_unlock(&priv->state_lock);
+	PRIV_UNLOCK(priv);
 
 	/* destroy all remaining sysctl nodes */
 	sysctl_ctx_free(&priv->stats.vport.ctx);
@@ -2260,6 +2298,7 @@ mlx5e_destroy_ifp(struct mlx5_core_dev *mdev, void *vpriv)
 	mlx5e_disable_async_events(priv);
 	flush_scheduled_work();
 	if_free(ifp);
+	mlx5e_priv_mtx_destroy(priv);
 	kfree(priv);
 }
 
