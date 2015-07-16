@@ -1,4 +1,4 @@
-MLXDIR?=${.CURDIR}/../../../drivex/mlx5/generated/freebsd
+MLXDIR?=${.CURDIR}/../../drivex/mlx5/generated/freebsd
 
 .PATH:	${MLXDIR}/core
 

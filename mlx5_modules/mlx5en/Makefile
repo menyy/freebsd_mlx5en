@@ -1,6 +1,6 @@
-MLXDIR?=${.CURDIR}/../../../drivex/mlx5/generated/freebsd
+MLXDIR?=${.CURDIR}/../../drivex/mlx5/generated/freebsd
 
-.PATH:	${MLXDIR}/core ${.CURDIR}/../../ofed/drivers/net/mlx5
+.PATH:	${MLXDIR}/core ${.CURDIR}/../../drivers/net/mlx5/
 
 SRCS= \
 mlx5_en_ethtool.c \
